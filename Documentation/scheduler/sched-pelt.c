@@ -26,7 +26,7 @@ void calc_runnable_avg_yN_inv(const int halflife)
 		x = ((1UL<<32)-1)*pow(y, i);
 
 		if (i % 4 == 0) printf("\n\t");
-		printf("0x%8x, ", x);
+		printf("0x%8x,", x);
 	}
 	printf("\n};\n\n");
 }
