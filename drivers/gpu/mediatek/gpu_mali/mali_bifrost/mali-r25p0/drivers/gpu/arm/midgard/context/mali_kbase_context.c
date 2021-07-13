@@ -145,6 +145,10 @@ static int kbase_insert_kctx_to_process(struct kbase_context *kctx)
 		kprcs->dma_buf_root = RB_ROOT;
 		kprcs->total_gpu_pages = 0;
 		kprcs->dma_buf_pages = 0;
+		WARN_ON(kobject_init_and_add(
+					&kprcs->kobj, &kprcs_ktype,
+					kctx->kbdev->proc_sysfs_node,
+					"%d", tgid));
 
 		while (*new) {
 			struct kbase_process *prcs_node;
