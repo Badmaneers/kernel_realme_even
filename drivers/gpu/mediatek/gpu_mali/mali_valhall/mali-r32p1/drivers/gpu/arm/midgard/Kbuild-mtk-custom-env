@@ -24,11 +24,6 @@ $(info mtk-Kbuild CONFIG_MALI_PLATFORM_THIRDPARTY_NAME := $(CONFIG_MALI_PLATFORM
 
 CONFIG_MALI_DEBUG := n
 
-ifneq ($(CONFIG_MTK_GPU_COMMON_DVFS_SUPPORT),y)
-CONFIG_MALI_DEVFREQ := y
-CONFIG_MALI_MTK_DEVFREQ := y
-endif
-
 ccflags-y += -I$(srctree)/include
 ccflags-y += -I$(srctree)/drivers/staging/android
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/include
