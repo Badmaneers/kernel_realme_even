@@ -24,10 +24,6 @@
 #include <linux/proc_fs.h>
 #endif
 
-#if IS_ENABLED(CONFIG_MALI_MTK_DEVFREQ)
-static int last_commited_idx = 0;
-#endif
-
 static bool mfg_powered;
 static DEFINE_MUTEX(mfg_pm_lock);
 static struct kbase_device *mali_kbdev;
