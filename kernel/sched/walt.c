@@ -106,7 +106,7 @@ static int __init walt_init_ops(void)
 	register_syscore_ops(&walt_syscore_ops);
 	return 0;
 }
-late_initcall(walt_init_ops);
+postcore_initcall(walt_init_ops);
 
 static int exiting_task(struct task_struct *p)
 {
