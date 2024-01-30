@@ -170,7 +170,9 @@ int ged_ge_alloc(int region_num, uint32_t *region_sizes)
 	fd_install(entry->alloc_fd, entry->file);
 
 	return fd;
-
+	
+err_parameter:
+	kfree(entry->data);
 err_kmalloc:
 err_entry_file:
 	put_unused_fd(entry->alloc_fd);
