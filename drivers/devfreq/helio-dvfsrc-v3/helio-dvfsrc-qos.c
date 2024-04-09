@@ -257,7 +257,6 @@ u32 dvfsrc_dump_reg(char *ptr, u32 count)
 		pr_info("%s\n", buf);
 
 	memset(buf, '\0', sizeof(buf));
-	get_spm_reg(buf);
 	if (ptr) {
 		index += scnprintf(&ptr[index], (count - index - 1),
 		"%s\n", buf);
