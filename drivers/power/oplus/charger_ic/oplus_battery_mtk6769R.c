@@ -4405,7 +4405,7 @@ bool oplus_chg_default_method4(void)
 
 void oplus_chg_choose_gauge_curve(int index_curve)
 {
-	static last_curve_index = -1;
+	static int last_curve_index = -1;
 	int target_index_curve = -1;
 
 	if (!pinfo)
