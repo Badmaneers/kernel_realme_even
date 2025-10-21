@@ -13,6 +13,26 @@
 #include <mtk_idle.h>
 
 #include <mtk_mcdi.h>
+
+/* Stub implementations for menu governor functions */
+unsigned int get_menu_predict_us(void)
+{
+	/* Return a default prediction value */
+	return 1000; /* 1ms default */
+}
+
+unsigned int get_menu_next_timer_us(void)
+{
+	/* Return next timer expiry in microseconds */
+	ktime_t delta_next, sleep_length;
+	
+	sleep_length = tick_nohz_get_sleep_length(&delta_next);
+	
+	if (sleep_length < 0)
+		return 0;
+	
+	return ktime_to_us(sleep_length);
+}
 #include <mtk_mcdi_governor.h>
 #include <mtk_mcdi_governor_lib.h>
 #include <mtk_mcdi_util.h>

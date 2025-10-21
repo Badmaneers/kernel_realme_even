@@ -184,16 +184,21 @@ static void mcdi_stress_stop(void)
 
 static void mcdi_idle_state_setting(unsigned long idx, unsigned long enable)
 {
-	struct cpuidle_driver *tbl = NULL;
+	struct cpuidle_device *dev = NULL;
 	int cpu;
 
 	if (idx >= NF_MCDI_STATE)
 		return;
 
 	for (cpu = 0; cpu < NF_CPU; cpu++) {
-		tbl = mcdi_state_tbl_get(cpu);
-		if (tbl->states[idx].disabled != (!enable))
-			tbl->states[idx].disabled = !enable;
+		dev = per_cpu(cpuidle_devices, cpu);
+		if (!dev)
+			continue;
+
+		if (enable)
+			dev->states_usage[idx].disable &= ~CPUIDLE_STATE_DISABLED_BY_DRIVER;
+		else
+			dev->states_usage[idx].disable |= CPUIDLE_STATE_DISABLED_BY_DRIVER;
 	}
 }
 

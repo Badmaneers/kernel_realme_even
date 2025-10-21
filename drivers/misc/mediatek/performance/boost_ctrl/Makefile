@@ -13,6 +13,7 @@
 
 
 obj-y += boostctrl_main.o
+obj-y += boostctrl_stubs.o
 
 obj-y += dram_ctrl/
 
