@@ -733,6 +733,7 @@ static void init_clks(struct platform_device *pdev, struct clk **clk)
 	int i;
 
 	for (i = CLK_NONE + 1; i < CLK_MAX; i++)
+	for (i = CLK_NONE + 1; i < CLK_MAX; i++)
 		clk[i] = devm_clk_get(&pdev->dev, clk_names[i]);
 }
 
@@ -865,6 +866,7 @@ static struct scp *init_scp(struct platform_device *pdev,
 
 	pd_data->num_domains = num;
 
+	init_clks(pdev, clk);
 	init_clks(pdev, clk);
 
 	for (i = 0; i < num; i++) {
