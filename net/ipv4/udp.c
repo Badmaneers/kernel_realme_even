@@ -800,7 +800,7 @@ static int udp_send_skb(struct sk_buff *skb, struct flowi4 *fl4,
 			kfree_skb(skb);
 			return -EINVAL;
 		}
-		if (skb->len > cork->gso_size * UDP_MAX_SEGMENTS) {
+		if (datalen > cork->gso_size * UDP_MAX_SEGMENTS) {
 			kfree_skb(skb);
 			return -EINVAL;
 		}
@@ -2533,19 +2533,6 @@ int udp_lib_setsockopt(struct sock *sk, int level, int optname,
 		if (val < 0 || val > USHRT_MAX)
 			return -EINVAL;
 		WRITE_ONCE(up->gso_size, val);
-		break;
-
-	case UDP_GRO:
-		lock_sock(sk);
-		if (val == 0xEAEA) {
-			up->gro_disabled = UDP_GRO_DISABLED;
-		} else {
-			up->gro_disabled = 0;
-			if (valbool)
-				udp_tunnel_encap_enable(sk->sk_socket);
-			up->gro_enabled = valbool;
-		}
-		release_sock(sk);
 		break;
 
 	/*
