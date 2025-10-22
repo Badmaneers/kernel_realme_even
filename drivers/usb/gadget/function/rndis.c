@@ -1075,9 +1075,6 @@ void rndis_free_response(struct rndis_params *params, u8 *buf)
 	rndis_resp_t *r, *n;
 	struct list_head *act, *tmp;
 
-	if (rndis_debug > 2)
-		RNDIS_DBG("\n");
-
 	spin_lock(&params->resp_lock);
 	list_for_each_entry_safe(r, n, &params->resp_queue, list) {
 		if (r->buf == buf) {
