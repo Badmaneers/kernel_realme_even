@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 
+
 # chacha is used by the /dev/random driver which is always builtin
 obj-y						+= chacha.o
 obj-$(CONFIG_CRYPTO_LIB_CHACHA_GENERIC)		+= libchacha.o
@@ -30,4 +31,5 @@ ifneq ($(CONFIG_CRYPTO_MANAGER_DISABLE_TESTS),y)
 libblake2s-y					+= blake2s-selftest.o
 libchacha20poly1305-y				+= chacha20poly1305-selftest.o
 libcurve25519-y					+= curve25519-selftest.o
+
 endif

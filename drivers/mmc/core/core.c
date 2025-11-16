@@ -1416,31 +1416,26 @@ int mmc_cqe_recovery(struct mmc_host *host)
 	pr_warn("%s: running CQE recovery\n", mmc_hostname(host));
 	host->cqe_ops->cqe_recovery_start(host);//cqhci_recovery_start
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.opcode       = MMC_STOP_TRANSMISSION,
-	cmd.flags        = MMC_RSP_R1B | MMC_CMD_AC,
+	cmd.opcode       = MMC_STOP_TRANSMISSION;
+	cmd.flags        = MMC_RSP_R1B | MMC_CMD_AC;
 	cmd.flags       &= ~MMC_RSP_CRC; /* Ignore CRC */
-	cmd.busy_timeout = MMC_CQE_RECOVERY_TIMEOUT,
-	err = mmc_wait_for_cmd(host, &cmd, 0);
-	pr_info("[guilin %s %d]CMD=%d,error=%d,resp=0x%08X,err=%d\n",__func__,__LINE__,cmd.opcode,cmd.error,cmd.resp[0],err);
+	cmd.busy_timeout = MMC_CQE_RECOVERY_TIMEOUT;
+	mmc_wait_for_cmd(host, &cmd, MMC_CMD_RETRIES);
+
+	mmc_poll_for_busy(host->card, MMC_CQE_RECOVERY_TIMEOUT, true, true);
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.opcode       = MMC_CMDQ_TASK_MGMT;
 	cmd.arg          = 1; /* Discard entire queue */
 	cmd.flags        = MMC_RSP_R1B | MMC_CMD_AC;
 	cmd.flags       &= ~MMC_RSP_CRC; /* Ignore CRC */
-	cmd.busy_timeout = MMC_CQE_RECOVERY_TIMEOUT,
-	err = mmc_wait_for_cmd(host, &cmd, 0);
-	pr_info("[guilin %s %d]CMD=%d,error=%d,resp=0x%08X,err=%d\n",__func__,__LINE__,cmd.opcode,cmd.error,cmd.resp[0],err);
-
-	memset(&cmd, 0, sizeof(cmd));
-	cmd.opcode       = MMC_SEND_STATUS;
-	cmd.arg          = host->card->rca << 16;
-	cmd.flags        = MMC_RSP_SPI_R2 | MMC_RSP_R1 | MMC_CMD_AC;
-	cmd.busy_timeout = MMC_CQE_RECOVERY_TIMEOUT,
-	err = mmc_wait_for_cmd(host, &cmd, 0);
-	pr_info("[guilin %s %d]CMD=%d,error=%d,resp=0x%08X,err=%d\n",__func__,__LINE__,cmd.opcode,cmd.error,cmd.resp[0],err);
+	cmd.busy_timeout = MMC_CQE_RECOVERY_TIMEOUT;
+	err = mmc_wait_for_cmd(host, &cmd, MMC_CMD_RETRIES);
 
 	host->cqe_ops->cqe_recovery_finish(host);//cqhci_recovery_finish
+
+	if (err)
+		err = mmc_wait_for_cmd(host, &cmd, MMC_CMD_RETRIES);
 
 	mmc_retune_release(host);
 
@@ -2360,7 +2355,13 @@ u32 mmc_select_voltage(struct mmc_host *host, u32 ocr)
 		mmc_power_cycle(host, ocr);
 	} else {
 		bit = fls(ocr) - 1;
-		ocr &= 3 << bit;
+		/*
+		 * The bit variable represents the highest voltage bit set in
+		 * the OCR register.
+		 * To keep a range of 2 values (e.g. 3.2V/3.3V and 3.3V/3.4V),
+		 * we must shift the mask '3' with (bit - 1).
+		 */
+		ocr &= 3 << (bit - 1);
 		if (bit != host->ios.vdd)
 			dev_warn(mmc_dev(host), "exceeding card's volts\n");
 	}

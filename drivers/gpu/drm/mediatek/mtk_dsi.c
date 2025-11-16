@@ -99,6 +99,13 @@
 #define DSI_DUAL_EN BIT(4)
 #define CON_CTRL_FLD_REG_DUAL_EN REG_FLD_MSB_LSB(4, 4)
 #define DSI_CM_WAIT_FIFO_FULL_EN BIT(27)
+//#define DSI_PSCTRL		0x1c
+//#define DSI_PS_WC			0x3fff
+//#define DSI_PS_SEL			(3 << 16)
+#define PACKED_PS_16BIT_RGB565		(0 << 16)
+#define PACKED_PS_18BIT_RGB666		(1 << 16)
+#define LOOSELY_PS_24BIT_RGB666		(2 << 16)
+#define PACKED_PS_24BIT_RGB888		(3 << 16)
 
 #define DSI_MODE_CTRL 0x14
 #define MODE (3)
