@@ -693,8 +693,15 @@ static ssize_t show_scaling_cur_freq(struct cpufreq_policy *policy, char *buf)
 	freq = arch_freq_get_on_cpu(policy->cpu);
 	if (freq)
 		ret = sprintf(buf, "%u\n", freq);
-	else if (cpufreq_driver && cpufreq_driver->setpolicy &&
-			cpufreq_driver->get)
+	else if (cpufreq_driver && cpufreq_driver->get)
+		/*
+		 * Some platform drivers (MediaTek) implement ->get() but do not
+		 * provide ->setpolicy(). Previously the sysfs handler used
+		 * driver->get() only when setpolicy was present which caused
+		 * scaling_cur_freq to fall back to policy->cur and return stale or
+		 * unknown values. Use driver->get() whenever available so sysfs
+		 * reflects actual hardware frequency.
+		 */
 		ret = sprintf(buf, "%u\n", cpufreq_driver->get(policy->cpu));
 	else
 		ret = sprintf(buf, "%u\n", policy->cur);
