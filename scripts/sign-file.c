@@ -98,7 +98,7 @@ static void display_openssl_errors(int l)
 		fprintf(stderr, "- SSL %s: %s:%d\n", buf, file, line);
 	}
 }
-
+#ifndef OPENSSL_NO_ENGINE
 static void drain_openssl_errors(void)
 {
 	const char *file;
@@ -108,7 +108,7 @@ static void drain_openssl_errors(void)
 		return;
 	while (ERR_get_error_line(&file, &line)) {}
 }
-
+#endif
 #define ERR(cond, fmt, ...)				\
 	do {						\
 		bool __cond = (cond);			\
@@ -142,7 +142,8 @@ static int pem_pw_cb(char *buf, int len, int w, void *v)
 static EVP_PKEY *read_private_key(const char *private_key_name)
 {
 	EVP_PKEY *private_key;
-
+	BIO *b;
+#ifndef OPENSSL_NO_ENGINE
 	if (!strncmp(private_key_name, "pkcs11:", 7)) {
 		ENGINE *e;
 
@@ -160,16 +161,15 @@ static EVP_PKEY *read_private_key(const char *private_key_name)
 		private_key = ENGINE_load_private_key(e, private_key_name,
 						      NULL, NULL);
 		ERR(!private_key, "%s", private_key_name);
-	} else {
-		BIO *b;
-
-		b = BIO_new_file(private_key_name, "rb");
-		ERR(!b, "%s", private_key_name);
-		private_key = PEM_read_bio_PrivateKey(b, NULL, pem_pw_cb,
-						      NULL);
-		ERR(!private_key, "%s", private_key_name);
-		BIO_free(b);
+		return private_key;
 	}
+#endif
+	b = BIO_new_file(private_key_name, "rb");
+	ERR(!b, "%s", private_key_name);
+	private_key = PEM_read_bio_PrivateKey(b, NULL, pem_pw_cb,
+					      NULL);
+	ERR(!private_key, "%s", private_key_name);
+	BIO_free(b);
 
 	return private_key;
 }
@@ -206,8 +206,8 @@ static X509 *read_x509(const char *x509_name)
 	else
 		/* Assume PEM encoded X.509 */
 		x509 = PEM_read_bio_X509(b, NULL, NULL, NULL);
-
-	BIO_free(b);
+	
+		BIO_free(b);
 	ERR(!x509, "%s", x509_name);
 
 	return x509;
@@ -390,7 +390,7 @@ int main(int argc, char **argv)
 			ERR(BIO_write(bd, buf, n) < 0, "%s", dest_name);
 		BIO_free(b);
 	}
-
+	
 	sig_size = BIO_number_written(bd) - module_size;
 	sig_info.sig_len = htonl(sig_size);
 	ERR(BIO_write(bd, &sig_info, sizeof(sig_info)) < 0, "%s", dest_name);
@@ -402,5 +402,5 @@ int main(int argc, char **argv)
 	if (replace_orig)
 		ERR(rename(dest_name, module_name) < 0, "%s", dest_name);
 
-	return 0;
+		return 0;
 }
