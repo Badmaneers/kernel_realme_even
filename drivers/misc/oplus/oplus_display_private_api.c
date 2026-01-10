@@ -105,7 +105,7 @@ int disp_lcm_poweroff_after_ulps(struct disp_lcm_handle *plcm);
 
 
 void get_panel_state(void) {
-	if (strstr(boot_command_line, "is_dvt_panel=1")) {
+	if (strstr(saved_command_line, "is_dvt_panel=1")) {
 		is_dvt_panel = 1;
 	} else {
 		is_dvt_panel = 0;
