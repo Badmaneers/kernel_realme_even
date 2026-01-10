@@ -2863,11 +2863,8 @@ static struct platform_driver si_sia81xx_dev_driver = {
 /********************************************************************
  * end - sia81xx dev driver
  ********************************************************************/
-#ifdef CONFIG_SIA_PA_ALGO_MT6833
-static int __init sia81xx_pa_init(void)
-#else
+
 int sia81xx_pa_init(void)
-#endif /* CONFIG_SIA_PA_ALGO_MT6833 */
 {
 	int ret = 0;
 
@@ -2905,6 +2902,14 @@ int sia81xx_pa_init(void)
 
 	return 0;
 }
+
+#ifdef CONFIG_SIA_PA_ALGO_MT6833
+static int __init sia81xx_pa_init_initcall(void)
+{
+	return sia81xx_pa_init();
+}
+#endif /* CONFIG_SIA_PA_ALGO_MT6833 */
+
 #ifdef OPLUS_BUG_COMPATIBILITY
 EXPORT_SYMBOL(sia81xx_pa_init);
 #endif /* OPLUS_BUG_COMPATIBILITY */
@@ -2934,7 +2939,7 @@ static void __exit sia81xx_pa_exit(void)
 }
 
 #ifdef CONFIG_SIA_PA_ALGO_MT6833
-module_init(sia81xx_pa_init);
+module_init(sia81xx_pa_init_initcall);
 module_exit(sia81xx_pa_exit);
 #else
 //module_init(sia81xx_pa_init);
