@@ -79,7 +79,11 @@ else
 	# LD 1.0
 	# CFG_FM_CHIP_ID is platform chip id
         ifeq ($(CONFIG_MTK_FM_CHIP),)
-            $(error CONFIG_MTK_FM_CHIP not defined)
+            ifneq ($(filter clean mrproper distclean, $(MAKECMDGOALS)),)
+                CONFIG_MTK_FM_CHIP="DUMMY"
+            else
+                $(error CONFIG_MTK_FM_CHIP not defined)
+            endif
         endif
 
         ccflags-y += -D CFG_FM_CHIP_ID=0x$(CFG_FM_CHIP_ID)
