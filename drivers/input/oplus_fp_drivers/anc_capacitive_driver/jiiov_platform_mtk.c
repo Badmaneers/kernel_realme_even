@@ -103,7 +103,7 @@ struct vreg_config {
 };
 
 #define ANC_VREG_LDO_NAME    "ldo"
-static const struct vreg_config const vreg_conf[] = {
+static const struct vreg_config vreg_conf[] = {
     {
         ANC_VREG_LDO_NAME,
         3000000UL,
