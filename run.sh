@@ -4,7 +4,7 @@
 # Define some things
 # Kernel common
 export ARCH=arm64
-export version=-V1.6.4
+export version=-V1.7
 export LINKER="ld.lld"
 export kver="release-candidate"
 export CODENAME="even"
