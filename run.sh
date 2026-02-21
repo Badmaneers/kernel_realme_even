@@ -243,26 +243,6 @@ configure_anykernel() {
 
     echo "Configuring AnyKernel..."
 
-    # ===============================
-    # Ensure banner print block exists
-    # ===============================
-
-    # Remove old banner print block if exists
-    sed -i '/# SATURN_FILE_BANNER_START/,/# SATURN_FILE_BANNER_END/d' $ANYKERNEL_SH
-
-    # Insert banner reader inside properties()
-    sed -i '/^properties()/a\
-# SATURN_FILE_BANNER_START\
-ui_print " ";\
-if [ -f "$AKHOME/banner" ]; then\
-    while IFS= read -r line; do\
-        ui_print "$line";\
-    done < "$AKHOME/banner";\
-fi;\
-ui_print " ";\
-# SATURN_FILE_BANNER_END
-' $ANYKERNEL_SH
-
 
     # ===============================
     # Kernel string
@@ -293,11 +273,6 @@ ui_print " ";\
     else
         sed -i "s|do.modules=.*|do.modules=0|g" $ANYKERNEL_SH
     fi
-
-    # ===============================
-    # Android versions
-    # ===============================
-    sed -i "s|supported.versions=.*|supported.versions=1-15|g" $ANYKERNEL_SH
 }
 
 zip_kernel() {
