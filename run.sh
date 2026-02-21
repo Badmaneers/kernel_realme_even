@@ -21,6 +21,9 @@ export LLVM_IAS=1
 export PATH="${PWD}/clang/bin:${PATH}"
 PROCS=$(nproc --all)
 
+# Get the script's own filename
+SCRIPT_NAME=$(basename "$0")
+
 # Toolchain & AnyKernel repos
 export CLANG_REPO="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86"
 export CLANG_BRANCH="main"
@@ -49,7 +52,7 @@ WHITE='\033[1;37m'
 script_permissions=$(stat -c %a "$0")
 if [ "$script_permissions" -lt 777 ]; then
     echo -e "${RED}error:${NOCOLOR} Don't have enough permission"
-    echo "run 'chmod 0777 origami_kernel_builder.sh' and rerun"
+    echo "run 'chmod 0777 $SCRIPT_NAME' and rerun"
     exit 126
 fi
 
