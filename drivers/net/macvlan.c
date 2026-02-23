@@ -274,25 +274,22 @@ static void macvlan_broadcast(struct sk_buff *skb,
 	if (skb->protocol == htons(ETH_P_PAUSE))
 		return;
 
-	for (i = 0; i < MACVLAN_HASH_SIZE; i++) {
-		hlist_for_each_entry_rcu(vlan, &port->vlan_hash[i], hlist) {
-			if (vlan->dev == src || !(vlan->mode & mode))
-				continue;
+	hash_for_each_rcu(port->vlan_hash, i, vlan, hlist) {
+		if (vlan->dev == src || !(vlan->mode & mode))
+			continue;
 
-			hash = mc_hash(vlan, eth->h_dest);
-			if (!test_bit(hash, vlan->mc_filter))
-				continue;
+		hash = mc_hash(vlan, eth->h_dest);
+		if (!test_bit(hash, vlan->mc_filter))
+			continue;
 
-			err = NET_RX_DROP;
-			nskb = skb_clone(skb, GFP_ATOMIC);
-			if (likely(nskb))
-				err = macvlan_broadcast_one(
-					nskb, vlan, eth,
+		err = NET_RX_DROP;
+		nskb = skb_clone(skb, GFP_ATOMIC);
+		if (likely(nskb))
+			err = macvlan_broadcast_one(nskb, vlan, eth,
 					mode == MACVLAN_MODE_BRIDGE) ?:
-				      netif_rx_ni(nskb);
-			macvlan_count_rx(vlan, skb->len + ETH_HLEN,
-					 err == NET_RX_SUCCESS, true);
-		}
+			      netif_rx_ni(nskb);
+		macvlan_count_rx(vlan, skb->len + ETH_HLEN,
+				 err == NET_RX_SUCCESS, true);
 	}
 }
 
@@ -386,13 +383,9 @@ static void macvlan_flush_sources(struct macvlan_port *port,
 	struct hlist_node *next;
 	int i;
 
-	for (i = 0; i < MACVLAN_HASH_SIZE; i++) {
-		struct hlist_head *h = &port->vlan_source_hash[i];
-
-		hlist_for_each_entry_safe(entry, next, h, hlist)
-			if (rcu_access_pointer(entry->vlan) == vlan)
-				macvlan_hash_del_source(entry);
-	}
+	hash_for_each_safe(port->vlan_source_hash, i, next, entry, hlist)
+		if (rcu_access_pointer(entry->vlan) == vlan)
+			macvlan_hash_del_source(entry);
 
 	vlan->macaddr_count = 0;
 }
@@ -423,7 +416,7 @@ static void macvlan_forward_source_one(struct sk_buff *skb,
 	macvlan_count_rx(vlan, len, ret == NET_RX_SUCCESS, false);
 }
 
-static void macvlan_forward_source(struct sk_buff *skb,
+static bool macvlan_forward_source(struct sk_buff *skb,
 				   struct macvlan_port *port,
 				   const unsigned char *addr)
 {
@@ -431,17 +424,22 @@ static void macvlan_forward_source(struct sk_buff *skb,
 	struct macvlan_dev *vlan;
 	u32 idx = macvlan_eth_hash(addr);
 	struct hlist_head *h = &port->vlan_source_hash[idx];
+	bool consume = false;
 
 	hlist_for_each_entry_rcu(entry, h, hlist) {
-		if (!ether_addr_equal_64bits(entry->addr, addr))
-			continue;
+		if (ether_addr_equal_64bits(entry->addr, addr)) {
+			struct macvlan_dev *vlan = rcu_dereference(entry->vlan);
 
-		vlan = rcu_dereference(entry->vlan);
-		if (!vlan)
-			continue;
+			if (!vlan)
+				continue;
 
-		macvlan_forward_source_one(skb, vlan);
+			if (vlan->flags & MACVLAN_FLAG_NODST)
+				consume = true;
+			macvlan_forward_source_one(skb, vlan);
+		}
 	}
+
+	return consume;
 }
 
 /* called under rcu_read_lock() from netif_receive_skb */
@@ -470,7 +468,10 @@ static rx_handler_result_t macvlan_handle_frame(struct sk_buff **pskb)
 			return RX_HANDLER_CONSUMED;
 		*pskb = skb;
 		eth = eth_hdr(skb);
-		macvlan_forward_source(skb, port, eth->h_source);
+		if (macvlan_forward_source(skb, port, eth->h_source)) {
+			kfree_skb(skb);
+			return RX_HANDLER_CONSUMED;
+		}
 		src = macvlan_hash_lookup(port, eth->h_source);
 		if (src && src->mode != MACVLAN_MODE_VEPA &&
 		    src->mode != MACVLAN_MODE_BRIDGE) {
@@ -489,7 +490,10 @@ static rx_handler_result_t macvlan_handle_frame(struct sk_buff **pskb)
 		return RX_HANDLER_PASS;
 	}
 
-	macvlan_forward_source(skb, port, eth->h_source);
+	if (macvlan_forward_source(skb, port, eth->h_source)) {
+		kfree_skb(skb);
+		return RX_HANDLER_CONSUMED;
+	}
 	if (macvlan_passthru(port))
 		vlan = list_first_or_null_rcu(&port->vlans,
 					      struct macvlan_dev, list);
@@ -1250,7 +1254,8 @@ static int macvlan_validate(struct nlattr *tb[], struct nlattr *data[],
 		return 0;
 
 	if (data[IFLA_MACVLAN_FLAGS] &&
-	    nla_get_u16(data[IFLA_MACVLAN_FLAGS]) & ~MACVLAN_FLAG_NOPROMISC)
+	    nla_get_u16(data[IFLA_MACVLAN_FLAGS]) & ~(MACVLAN_FLAG_NOPROMISC |
+						      MACVLAN_FLAG_NODST))
 		return -EINVAL;
 
 	if (data[IFLA_MACVLAN_MODE]) {
@@ -1477,9 +1482,10 @@ destroy_macvlan_port:
 	/* the macvlan port may be freed by macvlan_uninit when fail to register.
 	 * so we destroy the macvlan port only when it's valid.
 	 */
-	if (create && macvlan_port_get_rtnl(lowerdev)) {
+	if (macvlan_port_get_rtnl(lowerdev)) {
 		macvlan_flush_sources(port, vlan);
-		macvlan_port_destroy(port->dev);
+		if (create)
+			macvlan_port_destroy(port->dev);
 	}
 	return err;
 }
