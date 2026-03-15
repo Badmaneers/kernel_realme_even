@@ -226,21 +226,13 @@ static ssize_t __sbi_show_value(struct f2fs_attr *a,
 		struct f2fs_sb_info *sbi, char *buf,
 		unsigned char *value)
 {
-	switch (a->size) {
-	case 1:
-		return sysfs_emit(buf, "%u\n", *(u8 *)value);
-	case 2:
-		return sysfs_emit(buf, "%u\n", *(u16 *)value);
-	case 4:
-		return sysfs_emit(buf, "%u\n", *(u32 *)value);
-	case 8:
-		return sysfs_emit(buf, "%llu\n", *(u64 *)value);
-	default:
-		f2fs_bug_on(sbi, 1);
-		return sysfs_emit(buf,
-				"show sysfs node value with wrong type\n");
-	}
+	struct f2fs_stat_info *si = F2FS_STAT(sbi);
+
+	si->dirty_count = dirty_segments(sbi);
+	f2fs_update_sit_info(sbi);
+	return sprintf(buf, "%llu\n", (unsigned long long)(si->avg_vblocks));
 }
+#endif
 
 static ssize_t __sbi_show_value(struct f2fs_attr *a,
 		struct f2fs_sb_info *sbi, char *buf,
@@ -314,7 +306,7 @@ static void __sbi_store_value(struct f2fs_attr *a,
 		break;
 	default:
 		f2fs_bug_on(sbi, 1);
-		f2fs_msg(sbi->sb, KERN_ERR, "store sysfs node value with wrong type");
+		f2fs_err(sbi, "store sysfs node value with wrong type");
 	}
 }
 
@@ -438,6 +430,15 @@ out:
 		sbi->iostat_enable = !!t;
 		if (!sbi->iostat_enable)
 			f2fs_reset_iostat(sbi);
+		return count;
+	}
+
+	if (!strcmp(a->attr.name, "iostat_period_ms")) {
+		if (t < MIN_IOSTAT_PERIOD_MS || t > MAX_IOSTAT_PERIOD_MS)
+			return -EINVAL;
+		spin_lock(&sbi->iostat_lock);
+		sbi->iostat_period_ms = (unsigned int)t;
+		spin_unlock(&sbi->iostat_lock);
 		return count;
 	}
 
