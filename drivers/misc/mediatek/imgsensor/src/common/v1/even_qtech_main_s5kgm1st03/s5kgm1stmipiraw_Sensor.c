@@ -598,6 +598,11 @@ static void set_mirror_flip(kal_uint8 image_mirror)
 		case IMAGE_HV_MIRROR:
 			write_cmos_sensor_8(0x0101, itemp | 0x03);
 			break;
+		default:
+			LOG_ERR("invalid mirror setting %u, fallback to normal\n",
+				image_mirror);
+			write_cmos_sensor_8(0x0101, itemp);
+			break;
 	}
 }
 
@@ -607,6 +612,11 @@ static void set_max_framerate(UINT16 framerate,kal_bool min_framelength_en)
 
 	LOG_INF("framerate = %d, min framelength should enable %d\n", framerate,
 		min_framelength_en);
+	if (!framerate || !imgsensor.line_length) {
+		LOG_ERR("invalid framerate(%u) or line_length(%u)\n",
+			framerate, imgsensor.line_length);
+		return;
+	}
 
 	frame_length = imgsensor.pclk / framerate * 10 / imgsensor.line_length;
 	spin_lock(&imgsensor_drv_lock);
@@ -744,21 +754,26 @@ static void set_shutter_frame_length(kal_uint32 shutter,
 	unsigned long flags;
 	kal_uint16 realtime_fps = 0;
 	kal_int32 dummy_line = 0;
-	kal_uint64 CintR = 0;
-	kal_uint64 Time_Farme = 0;
 	kal_bool frame_length_written = KAL_FALSE;
-	kal_bool long_shutter = (shutter >= 0xFFF0);
 
 	spin_lock_irqsave(&imgsensor_drv_lock, flags);
 	imgsensor.shutter = shutter;
 	spin_unlock_irqrestore(&imgsensor_drv_lock, flags);
 
+	/* Keep long-shutter behavior identical to set_shutter/write_shutter path. */
+	if (shutter >= 0xFFF0) {
+		write_shutter(shutter);
+		return;
+	}
+
 	spin_lock(&imgsensor_drv_lock);
 	/* Change frame time */
-	if (frame_length > 1)
+	if (frame_length > 1 && frame_length > imgsensor.frame_length)
 		dummy_line = frame_length - imgsensor.frame_length;
 
 	imgsensor.frame_length = imgsensor.frame_length + dummy_line;
+	if (imgsensor.frame_length < imgsensor.min_frame_length)
+		imgsensor.frame_length = imgsensor.min_frame_length;
 
 	if (shutter > imgsensor.frame_length - imgsensor_info.margin)
 	    imgsensor.frame_length = shutter + imgsensor_info.margin;
@@ -775,47 +790,29 @@ static void set_shutter_frame_length(kal_uint32 shutter,
 			set_max_framerate(296, 0);
 		} else if (realtime_fps >= 147 && realtime_fps <= 150) {
 			set_max_framerate(146, 0);
-		} else if (!long_shutter) {
+		} else {
 			/* Extend frame length */
 			write_cmos_sensor(0x0340, imgsensor.frame_length);
 			frame_length_written = KAL_TRUE;
 		}
-	} else if (!long_shutter) {
+	} else {
 		/* Extend frame length */
 		write_cmos_sensor(0x0340, imgsensor.frame_length);
 		frame_length_written = KAL_TRUE;
 	}
 
-	if (long_shutter) {
-		bNeedSetNormalMode = KAL_TRUE;
-
-		if (shutter >= 1538000) {
-			shutter = 1538000;
-		}
-		CintR = (5013 * (unsigned long long)shutter) / 321536;
-		Time_Farme = CintR + 0x0002;
-		LOG_INF("CintR =%d \n", CintR);
-
-		sensor_group_hold(KAL_TRUE);
-		write_cmos_sensor(0x0340, Time_Farme & 0xFFFF);
-		write_cmos_sensor(0x0202, CintR & 0xFFFF);
-		write_cmos_sensor(0x0702, 0x0600);
-		write_cmos_sensor(0x0704, 0x0600);
-		sensor_group_hold(KAL_FALSE);
-	} else {
-		sensor_group_hold(KAL_TRUE);
-		if (bNeedSetNormalMode) {
-			LOG_INF("exit long shutter\n");
-			write_cmos_sensor(0x0702, 0x0000);
-			write_cmos_sensor(0x0704, 0x0000);
-			bNeedSetNormalMode = KAL_FALSE;
-		}
-
-		if (!frame_length_written)
-			write_cmos_sensor(0x0340, imgsensor.frame_length);
-		write_cmos_sensor(0x0202, imgsensor.shutter);
-		sensor_group_hold(KAL_FALSE);
+	sensor_group_hold(KAL_TRUE);
+	if (bNeedSetNormalMode) {
+		LOG_INF("exit long shutter\n");
+		write_cmos_sensor(0x0702, 0x0000);
+		write_cmos_sensor(0x0704, 0x0000);
+		bNeedSetNormalMode = KAL_FALSE;
 	}
+
+	if (!frame_length_written)
+		write_cmos_sensor(0x0340, imgsensor.frame_length);
+	write_cmos_sensor(0x0202, imgsensor.shutter);
+	sensor_group_hold(KAL_FALSE);
 
 	LOG_INF("Exit! shutter =%d, framelength =%d/%d, dummy_line=%d, auto_extend=%d\n",
 		shutter, imgsensor.frame_length, frame_length, dummy_line, auto_extend_en);
@@ -884,17 +881,26 @@ static void gm1st_set_lsc_reg_setting(
 		kal_uint8 index, kal_uint16 *regDa, MUINT32 regNum)
 {
 	int i;
-	int startAddr[4] = {0x9D88, 0x9CB0, 0x9BD8, 0x9B00};
+	const kal_uint16 startAddr[4] = {0x9D88, 0x9CB0, 0x9BD8, 0x9B00};
+	kal_uint16 lastAddr;
 	/*0:B,1:Gb,2:Gr,3:R*/
 	unsigned int max_channel = sizeof(startAddr) / sizeof(startAddr[0]);
+	const MUINT32 max_lsc_words = 512;
 
-	if (!regDa || regNum == 0 || index >= max_channel) {
+	if (!regDa || regNum == 0 || regNum > max_lsc_words || index >= max_channel) {
 		LOG_ERR("Invalid LSC input idx=%u regNum=%u\n", index, regNum);
+		return;
+	}
+
+	lastAddr = startAddr[index] + (kal_uint16)(2 * (regNum - 1));
+	if (lastAddr < startAddr[index]) {
+		LOG_ERR("Invalid LSC address range idx=%u regNum=%u\n", index, regNum);
 		return;
 	}
 
 	LOG_INF("E! index:%d, regNum:%d\n", index, regNum);
 
+	sensor_group_hold(KAL_TRUE);
 	write_cmos_sensor_8(0x0B00, 0x01); /*lsc enable*/
 	write_cmos_sensor_8(0x9014, 0x01);
 	write_cmos_sensor_8(0x4439, 0x01);
@@ -910,7 +916,9 @@ static void gm1st_set_lsc_reg_setting(
 	for (i = 0; i < regNum; i++)
 		write_cmos_sensor(startAddr[index] + 2*i, regDa[i]);
 
-	write_cmos_sensor_8(0x0B00, 0x00); /*lsc disable*/
+	/* Keep LSC active after table programming for stable shading correction. */
+	write_cmos_sensor_8(0x0B00, 0x01);
+	sensor_group_hold(KAL_FALSE);
 }
 /*************************************************************************
  * FUNCTION
@@ -934,26 +942,39 @@ static kal_uint32 streaming_control(kal_bool enable)
 	int timeout;
 	int i = 0;
 	int framecnt = 0;
+	kal_uint8 stream_state = 0;
 
 	if (current_fps == 0)
 		current_fps = imgsensor_info.pre.max_framerate;
+	if (current_fps == 0) {
+		LOG_ERR("invalid current_fps\n");
+		return ERROR_NONE;
+	}
 	timeout = (10000 / current_fps) + 1;
 
 	LOG_INF("streaming_enable(0= Sw Standby,1= streaming): %d\n", enable);
 	if (enable) {
 		write_cmos_sensor_8(0x0100, 0x01);
-		mDELAY(10);
+		for (i = 0; i < timeout; i++) {
+			mDELAY(5);
+			stream_state = read_cmos_sensor_8(0x0100) & 0x01;
+			if (stream_state == 0x01)
+				return ERROR_NONE;
+		}
+		LOG_INF("Stream On timeout! reg=0x%x.\n", stream_state);
 	} else {
 		write_cmos_sensor_8(0x0100, 0x00);
 		for (i = 0; i < timeout; i++) {
 			mDELAY(5);
 			framecnt = read_cmos_sensor_8(0x0005);
-			if (framecnt == 0xFF) {
+			stream_state = read_cmos_sensor_8(0x0100) & 0x01;
+			if (framecnt == 0xFF || stream_state == 0x00) {
 				LOG_INF(" Stream Off OK at i=%d.\n", i);
 				return ERROR_NONE;
 			}
 		}
-		LOG_INF("Stream Off Fail! framecnt= %d.\n", framecnt);
+		LOG_INF("Stream Off Fail! framecnt=%d, reg=0x%x.\n",
+			framecnt, stream_state);
 	}
 	return ERROR_NONE;
 }
@@ -963,6 +984,11 @@ static kal_uint16 table_write_cmos_sensor(kal_uint16 *para, kal_uint32 len)
 	char puSendCmd[I2C_BUFFER_LEN];
 	kal_uint32 tosend, IDX;
 	kal_uint16 addr = 0, data;
+
+	if (!para || len < 2 || (len & 0x1)) {
+		LOG_ERR("invalid table data para=%p len=%u\n", para, len);
+		return 0;
+	}
 
 	tosend = 0;
 	IDX = 0;
@@ -7348,6 +7374,11 @@ static kal_uint32 set_max_framerate_by_scenario(
 	kal_uint32 frame_length;
 
 	LOG_INF("scenario_id = %d, framerate = %d\n", scenario_id, framerate);
+	if (!framerate) {
+		LOG_ERR("invalid framerate=%u for scenario=%d\n",
+			framerate, scenario_id);
+		return ERROR_NONE;
+	}
 
 	switch (scenario_id) {
 	case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
@@ -7366,8 +7397,6 @@ static kal_uint32 set_max_framerate_by_scenario(
 			set_dummy();
 		break;
 	case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-		if (framerate == 0)
-			return ERROR_NONE;
 		frame_length = imgsensor_info.normal_video.pclk /
 				framerate * 10 /
 				imgsensor_info.normal_video.linelength;
@@ -8084,6 +8113,13 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 
 	case SENSOR_FEATURE_SET_LSC_TBL:
 	{
+		if (!feature_para_len || *feature_para_len < sizeof(UINT16) ||
+			((*feature_para_len) & 0x1)) {
+			LOG_ERR("Invalid LSC payload len=%u\n",
+				feature_para_len ? *feature_para_len : 0);
+			break;
+		}
+
 		kal_uint8 index =
 			*(((kal_uint8 *)feature_para) + (*feature_para_len));
 

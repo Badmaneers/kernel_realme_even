@@ -266,6 +266,11 @@ static kal_uint16 ov13b10_table_write_cmos_sensor(
 	kal_uint32 tosend, IDX;
 	kal_uint16 addr = 0, data;
 
+	if (!para || len < 2 || (len & 0x1)) {
+		LOG_INF("invalid table data para=%p len=%u\n", para, len);
+		return 0;
+	}
+
 	tosend = 0;
 	IDX = 0;
 	while (len > IDX) {
@@ -326,6 +331,12 @@ static void set_dummy(void)
 static void set_max_framerate(UINT16 framerate, kal_bool min_framelength_en)
 {
 	kal_uint32 frame_length = imgsensor.frame_length;
+
+	if (!framerate || !imgsensor.line_length) {
+		LOG_INF("invalid framerate(%u) or line_length(%u)\n",
+			framerate, imgsensor.line_length);
+		return;
+	}
 
 	frame_length = imgsensor.pclk / framerate * 10 / imgsensor.line_length;
 
@@ -2128,8 +2139,11 @@ static kal_uint32 set_max_framerate_by_scenario(
 
     LOG_DBG("scenario_id = %d, framerate = %d\n", scenario_id, framerate);
 
-	if (framerate == 0)
+	if (framerate == 0) {
+		LOG_INF("invalid framerate=%u for scenario=%d\n",
+			framerate, scenario_id);
 		return ERROR_NONE;
+	}
 
 	switch (scenario_id) {
 	case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
@@ -2147,8 +2161,6 @@ static kal_uint32 set_max_framerate_by_scenario(
 			set_dummy();
 	break;
 	case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-		if (framerate == 0)
-			return ERROR_NONE;
 	    frameHeight = imgsensor_info.normal_video.pclk / framerate * 10 /
 				imgsensor_info.normal_video.linelength;
 	    spin_lock(&imgsensor_drv_lock);
