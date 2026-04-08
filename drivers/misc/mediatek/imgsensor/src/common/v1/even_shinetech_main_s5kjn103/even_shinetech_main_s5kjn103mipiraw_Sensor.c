@@ -372,6 +372,11 @@ static void write_cmos_sensor_8(kal_uint16 addr, kal_uint8 para)
 
 	iWriteRegI2C(pusendcmd, 3, imgsensor.i2c_write_id);
 }
+
+static inline void sensor_group_hold(kal_bool enable)
+{
+	write_cmos_sensor_8(0x0104, enable ? 0x01 : 0x00);
+}
 /*
 static kal_uint16 read_cmos_sensor_shinetech_otp(kal_uint16 addr)
 {
@@ -547,7 +552,7 @@ static void set_mirror_flip(kal_uint8 image_mirror)
 {
 	kal_uint8 itemp;
 	LOG_INF("image_mirror = %d\n", image_mirror);
-	itemp=read_cmos_sensor(0x0101);
+	itemp = read_cmos_sensor_8(0x0101);
 	LOG_INF("image_mirror itemp = %d\n", itemp);
 	itemp &= ~0x03;
 
@@ -602,6 +607,8 @@ static void write_shutter(kal_uint32 shutter)
 	kal_uint16 realtime_fps = 0;
 	kal_uint64 CintR = 0;
 	kal_uint64 Time_Farme = 0;
+	kal_bool frame_length_written = KAL_FALSE;
+	kal_bool long_shutter = (shutter >= 0xFFF0);
 
 	spin_lock(&imgsensor_drv_lock);
 	if (shutter > imgsensor.min_frame_length - imgsensor_info.margin) {
@@ -623,16 +630,18 @@ static void write_shutter(kal_uint32 shutter)
 			set_max_framerate(296,0);
 		} else if (realtime_fps >= 147 && realtime_fps <= 150) {
 			set_max_framerate(146,0);
-		} else {
+		} else if (!long_shutter) {
 			// Extend frame length
 			write_cmos_sensor(0x0340, imgsensor.frame_length);
+			frame_length_written = KAL_TRUE;
 		}
-	} else {
+	} else if (!long_shutter) {
 		// Extend frame length
 		write_cmos_sensor(0x0340, imgsensor.frame_length);
+		frame_length_written = KAL_TRUE;
 	}
 
-	if (shutter >= 0xFFF0) {  // need to modify line_length & PCLK
+	if (long_shutter) {  // need to modify line_length & PCLK
 		bNeedSetNormalMode = KAL_TRUE;
 
 		if (shutter >= 3448275) {  //>32s
@@ -643,11 +652,14 @@ static void write_shutter(kal_uint32 shutter)
 		Time_Farme = CintR + 0x0002;  // 1st framelength
 		LOG_INF("CintR =%d \n", CintR);
 
+		sensor_group_hold(KAL_TRUE);
 		write_cmos_sensor(0x0340, Time_Farme & 0xFFFF);  // Framelength
 		write_cmos_sensor(0x0202, CintR & 0xFFFF);  //shutter
 		write_cmos_sensor(0x0702, 0x0700);
 		write_cmos_sensor(0x0704, 0x0700);
+		sensor_group_hold(KAL_FALSE);
 	} else {
+		sensor_group_hold(KAL_TRUE);
 		if (bNeedSetNormalMode) {
 			LOG_INF("exit long shutter\n");
 			write_cmos_sensor(0x0702, 0x0000);
@@ -655,8 +667,10 @@ static void write_shutter(kal_uint32 shutter)
 			bNeedSetNormalMode = KAL_FALSE;
 		}
 
-		write_cmos_sensor(0x0340, imgsensor.frame_length);
+		if (!frame_length_written)
+			write_cmos_sensor(0x0340, imgsensor.frame_length);
 		write_cmos_sensor(0x0202, imgsensor.shutter);
+		sensor_group_hold(KAL_FALSE);
 	}
 	LOG_INF("shutter =%d, framelength =%d \n", shutter,imgsensor.frame_length);
 }	/*	write_shutter  */
@@ -706,6 +720,8 @@ static void set_shutter_frame_length(kal_uint32 shutter,
 	kal_int32 dummy_line = 0;
 	kal_uint64 CintR = 0;
 	kal_uint64 Time_Farme = 0;
+	kal_bool frame_length_written = KAL_FALSE;
+	kal_bool long_shutter = (shutter >= 0xFFF0);
 
 	spin_lock_irqsave(&imgsensor_drv_lock, flags);
 	imgsensor.shutter = shutter;
@@ -733,16 +749,18 @@ static void set_shutter_frame_length(kal_uint32 shutter,
 			set_max_framerate(296, 0);
 		} else if (realtime_fps >= 147 && realtime_fps <= 150) {
 			set_max_framerate(146, 0);
-		} else {
+		} else if (!long_shutter) {
 			/* Extend frame length */
 			write_cmos_sensor(0x0340, imgsensor.frame_length);
+			frame_length_written = KAL_TRUE;
 		}
-	} else {
+	} else if (!long_shutter) {
 		/* Extend frame length */
 		write_cmos_sensor(0x0340, imgsensor.frame_length);
+		frame_length_written = KAL_TRUE;
 	}
 
-	if (shutter >= 0xFFF0) {
+	if (long_shutter) {
 		bNeedSetNormalMode = KAL_TRUE;
 
 		if (shutter >= 1538000) {
@@ -752,11 +770,14 @@ static void set_shutter_frame_length(kal_uint32 shutter,
 		Time_Farme = CintR + 0x0002;
 		LOG_INF("CintR =%d \n", CintR);
 
+		sensor_group_hold(KAL_TRUE);
 		write_cmos_sensor(0x0340, Time_Farme & 0xFFFF);
 		write_cmos_sensor(0x0202, CintR & 0xFFFF);
 		write_cmos_sensor(0x0702, 0x0600);
 		write_cmos_sensor(0x0704, 0x0600);
+		sensor_group_hold(KAL_FALSE);
 	} else {
+		sensor_group_hold(KAL_TRUE);
 		if (bNeedSetNormalMode) {
 			LOG_INF("exit long shutter\n");
 			write_cmos_sensor(0x0702, 0x0000);
@@ -764,12 +785,14 @@ static void set_shutter_frame_length(kal_uint32 shutter,
 			bNeedSetNormalMode = KAL_FALSE;
 		}
 
-		write_cmos_sensor(0x0340, imgsensor.frame_length);
+		if (!frame_length_written)
+			write_cmos_sensor(0x0340, imgsensor.frame_length);
 		write_cmos_sensor(0x0202, imgsensor.shutter);
+		sensor_group_hold(KAL_FALSE);
 	}
 
 	LOG_INF("Exit! shutter =%d, framelength =%d/%d, dummy_line=%d, auto_extend=%d\n",
-		shutter, imgsensor.frame_length, frame_length, dummy_line, read_cmos_sensor(0x0350));
+		shutter, imgsensor.frame_length, frame_length, dummy_line, auto_extend_en);
 }	/* set_shutter_frame_length */
 
 static kal_uint16 gain2reg(const kal_uint16 gain)
@@ -799,6 +822,7 @@ static kal_uint16 gain2reg(const kal_uint16 gain)
 static kal_uint16 set_gain(kal_uint16 gain)
 {
 	kal_uint16 reg_gain;
+	kal_uint16 cur_gain;
 
 	if (gain < BASEGAIN || gain > 64 * BASEGAIN) {
 		LOG_INF("Error gain setting");
@@ -811,12 +835,19 @@ static kal_uint16 set_gain(kal_uint16 gain)
 
 	reg_gain = gain2reg(gain);
 	spin_lock(&imgsensor_drv_lock);
+	cur_gain = imgsensor.gain;
+	if (cur_gain == reg_gain) {
+		spin_unlock(&imgsensor_drv_lock);
+		return gain;
+	}
 	imgsensor.gain = reg_gain;
 	spin_unlock(&imgsensor_drv_lock);
 	LOG_INF("gain = %d , reg_gain = 0x%x\n ", gain, reg_gain);
 
+	sensor_group_hold(KAL_TRUE);
 	write_cmos_sensor_8(0x0204, (reg_gain >> 8));
 	write_cmos_sensor_8(0x0205, (reg_gain & 0xff));
+	sensor_group_hold(KAL_FALSE);
 
 	return gain;
 }	/*	set_gain  */
@@ -829,6 +860,12 @@ static void even_shinetech_s5kjn103_set_lsc_reg_setting(
 	int i;
 	int startAddr[4] = {0x9D88, 0x9CB0, 0x9BD8, 0x9B00};
 	/*0:B,1:Gb,2:Gr,3:R*/
+	unsigned int max_channel = sizeof(startAddr) / sizeof(startAddr[0]);
+
+	if (!regDa || regNum == 0 || index >= max_channel) {
+		LOG_ERR("Invalid LSC input idx=%u regNum=%u\n", index, regNum);
+		return;
+	}
 
 	LOG_INF("E! index:%d, regNum:%d\n", index, regNum);
 
@@ -867,9 +904,14 @@ static void even_shinetech_s5kjn103_set_lsc_reg_setting(
  *************************************************************************/
 static kal_uint32 streaming_control(kal_bool enable)
 {
-	int timeout = (10000 / imgsensor.current_fps) + 1;
+	UINT16 current_fps = imgsensor.current_fps;
+	int timeout;
 	int i = 0;
 	int framecnt = 0;
+
+	if (current_fps == 0)
+		current_fps = imgsensor_info.pre.max_framerate;
+	timeout = (10000 / current_fps) + 1;
 
 	LOG_INF("streaming_enable(0= Sw Standby,1= streaming): %d\n", enable);
 	if (enable) {
@@ -894,7 +936,7 @@ static kal_uint16 table_write_cmos_sensor(kal_uint16 *para, kal_uint32 len)
 {
 	char puSendCmd[I2C_BUFFER_LEN];
 	kal_uint32 tosend, IDX;
-	kal_uint16 addr = 0, addr_last = 0, data;
+	kal_uint16 addr = 0, data;
 
 	tosend = 0;
 	IDX = 0;
@@ -908,11 +950,9 @@ static kal_uint16 table_write_cmos_sensor(kal_uint16 *para, kal_uint32 len)
 			puSendCmd[tosend++] = (char)(data >> 8);
 			puSendCmd[tosend++] = (char)(data & 0xFF);
 			IDX += 2;
-			addr_last = addr;
-
 		}
 		if ((I2C_BUFFER_LEN - tosend) < 4
-			|| IDX == len || addr != addr_last) {
+			|| IDX == len) {
 			iBurstWriteReg_multi(puSendCmd,
 						tosend,
 						imgsensor.i2c_write_id,
