@@ -297,7 +297,7 @@ static kal_uint16 table_write_cmos_sensor(kal_uint16 *para,
 {
 	char puSendCmd[I2C_BUFFER_LEN];
 	kal_uint32 tosend, IDX;
-	kal_uint16 addr = 0, addr_last = 0, data;
+	kal_uint16 addr = 0, data;
 
 	tosend = 0;
 	IDX = 0;
@@ -311,7 +311,6 @@ static kal_uint16 table_write_cmos_sensor(kal_uint16 *para,
 			data = para[IDX + 1];
 			puSendCmd[tosend++] = (char)(data & 0xFF);
 			IDX += 2;
-			addr_last = addr;
 
 		}
 #if MULTI_WRITE
@@ -319,7 +318,7 @@ static kal_uint16 table_write_cmos_sensor(kal_uint16 *para,
 		 * or reach end of data
 		 */
 		if ((I2C_BUFFER_LEN - tosend) < 3
-			|| IDX == len || addr != addr_last) {
+			|| IDX == len) {
 			iBurstWriteReg_multi(puSendCmd,
 						tosend,
 						imgsensor.i2c_write_id,
@@ -568,6 +567,10 @@ static kal_uint16 set_gain(kal_uint16 gain)
 
 	reg_gain = gain2reg(gain);
 	spin_lock(&imgsensor_drv_lock);
+	if (imgsensor.gain == reg_gain) {
+		spin_unlock(&imgsensor_drv_lock);
+		return gain;
+	}
 	imgsensor.gain = reg_gain;
 	spin_unlock(&imgsensor_drv_lock);
 	LOG_INF("gain = %d , reg_gain = 0x%x\n ", gain, reg_gain);
@@ -648,24 +651,31 @@ static kal_uint32 streaming_control(kal_bool enable)
 	int timeout = 100;
 	int i = 0;
 	int framecnt = 0;
+	kal_uint8 stream_state = 0;
 
 	LOG_INF("streaming_enable(0=Sw Standby,1=streaming): %d\n", enable);
 	if (enable) {
-		//write_cmos_sensor(0x6028,0x4000);
-		write_cmos_sensor_8(0x0100, 0X01);
-		mdelay(10);
+		write_cmos_sensor_8(0x0100, 0x01);
+		for (i = 0; i < 30; i++) {
+			stream_state = read_cmos_sensor_8(0x0100) & 0x01;
+			if (stream_state == 0x01)
+				return ERROR_NONE;
+			mdelay(2);
+		}
+		LOG_INF("Stream On mismatch! reg=0x%x.\n", stream_state);
 	} else {
-		//write_cmos_sensor(0x6028,0x4000);
 		write_cmos_sensor_8(0x0100, 0x00);
 		for (i = 0; i < timeout; i++) {
 			mdelay(10);
 			framecnt = read_cmos_sensor_8(0x0005);
-			if (framecnt == 0xFF) {
+			stream_state = read_cmos_sensor_8(0x0100) & 0x01;
+			if (framecnt == 0xFF || stream_state == 0x00) {
 				LOG_INF(" Stream Off OK at i=%d.\n", i);
 				return ERROR_NONE;
 			}
 		}
-		LOG_INF("Stream Off Fail! framecnt=%d.\n", framecnt);
+		LOG_INF("Stream Off Fail! framecnt=%d, reg=0x%x.\n",
+			framecnt, stream_state);
 	}
 	return ERROR_NONE;
 }

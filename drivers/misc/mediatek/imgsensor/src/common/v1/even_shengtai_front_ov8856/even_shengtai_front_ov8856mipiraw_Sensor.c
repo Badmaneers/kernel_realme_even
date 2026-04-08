@@ -232,7 +232,7 @@ static kal_uint16 even_shengtai_front_ov8856_table_write_cmos_sensor(kal_uint16 
 {
 	char puSendCmd[I2C_BUFFER_LEN];
 	kal_uint32 tosend, IDX;
-	kal_uint16 addr = 0, addr_last = 0, data;
+	kal_uint16 addr = 0, data;
 
 	tosend = 0;
 	IDX = 0;
@@ -245,12 +245,11 @@ static kal_uint16 even_shengtai_front_ov8856_table_write_cmos_sensor(kal_uint16 
 			data = para[IDX + 1];
 			puSendCmd[tosend++] = (char)(data & 0xFF);
 			IDX += 2;
-			addr_last = addr;
 
 		}
 #if MULTI_WRITE
 		/* Write when remain buffer size is less than 3 bytes or reach end of data */
-		if ((I2C_BUFFER_LEN - tosend) < 3 || IDX == len || addr != addr_last) {
+		if ((I2C_BUFFER_LEN - tosend) < 3 || IDX == len) {
 			iBurstWriteReg_multi(puSendCmd, tosend, imgsensor.i2c_write_id, 3,
 				 imgsensor_info.i2c_speed);
 			tosend = 0;
@@ -325,8 +324,11 @@ static void set_shutter_frame_length(kal_uint16 shutter, kal_uint16 frame_length
 	spin_unlock_irqrestore(&imgsensor_drv_lock, flags);
 	spin_lock(&imgsensor_drv_lock);
 	/*Change frame time*/
-	dummy_line = frame_length - imgsensor.frame_length;
+	if (frame_length > 1 && frame_length > imgsensor.frame_length)
+		dummy_line = frame_length - imgsensor.frame_length;
 	imgsensor.frame_length = imgsensor.frame_length + dummy_line;
+	if (imgsensor.frame_length < imgsensor.min_frame_length)
+		imgsensor.frame_length = imgsensor.min_frame_length;
 	imgsensor.min_frame_length = imgsensor.frame_length;
 
 	if (shutter > imgsensor.min_frame_length - imgsensor_info.margin)
@@ -451,6 +453,7 @@ static void set_shutter(kal_uint16 shutter)
 static kal_uint16 set_gain(kal_uint16 gain)
 {
 	kal_uint16 reg_gain;
+	kal_uint16 cur_gain;
 
 	if (gain < BASEGAIN || gain > 15 * BASEGAIN) {
 		LOG_INF("Error gain setting");
@@ -463,6 +466,11 @@ static kal_uint16 set_gain(kal_uint16 gain)
 
 	reg_gain = gain*2;
 	spin_lock(&imgsensor_drv_lock);
+	cur_gain = imgsensor.gain;
+	if (cur_gain == reg_gain) {
+		spin_unlock(&imgsensor_drv_lock);
+		return gain;
+	}
 	imgsensor.gain = reg_gain;
 	spin_unlock(&imgsensor_drv_lock);
 	LOG_INF("gain = %d , reg_gain = 0x%x\n ", gain, reg_gain);
@@ -505,6 +513,12 @@ static void ihdr_write_shutter_gain(kal_uint16 le, kal_uint16 se, kal_uint16 gai
 
 static void set_mirror_flip(kal_uint8 image_mirror)
 {
+	kal_uint16 reg3820 = read_cmos_sensor(0x3820);
+	kal_uint16 reg3821 = read_cmos_sensor(0x3821);
+	kal_uint16 reg502e = read_cmos_sensor(0x502e);
+	kal_uint16 reg5001 = read_cmos_sensor(0x5001);
+	kal_uint16 reg5004 = read_cmos_sensor(0x5004);
+
 	LOG_INF("image_mirror = %d\n", image_mirror);
 
 	/********************************************************
@@ -521,36 +535,36 @@ static void set_mirror_flip(kal_uint8 image_mirror)
 
 	switch (image_mirror) {
 	case IMAGE_NORMAL:
-			write_cmos_sensor(0x3820, ((read_cmos_sensor(0x3820) & 0xB9) | 0x00));
-			write_cmos_sensor(0x3821, ((read_cmos_sensor(0x3821) & 0xF9) | 0x06));
-			write_cmos_sensor(0x502e, ((read_cmos_sensor(0x502e) & 0xFC) | 0x03));
-			write_cmos_sensor(0x5001, ((read_cmos_sensor(0x5001) & 0xFB) | 0x00));
-			write_cmos_sensor(0x5004, ((read_cmos_sensor(0x5004) & 0xFB) | 0x04));
+			write_cmos_sensor(0x3820, ((reg3820 & 0xB9) | 0x00));
+			write_cmos_sensor(0x3821, ((reg3821 & 0xF9) | 0x06));
+			write_cmos_sensor(0x502e, ((reg502e & 0xFC) | 0x03));
+			write_cmos_sensor(0x5001, ((reg5001 & 0xFB) | 0x00));
+			write_cmos_sensor(0x5004, ((reg5004 & 0xFB) | 0x04));
 			write_cmos_sensor(0x376b, 0x30);
 
 			break;
 	case IMAGE_H_MIRROR:
-			write_cmos_sensor(0x3820, ((read_cmos_sensor(0x3820) & 0xB9) | 0x00));
-			write_cmos_sensor(0x3821, ((read_cmos_sensor(0x3821) & 0xF9) | 0x00));
-			write_cmos_sensor(0x502e, ((read_cmos_sensor(0x502e) & 0xFC) | 0x03));
-			write_cmos_sensor(0x5001, ((read_cmos_sensor(0x5001) & 0xFB) | 0x00));
-			write_cmos_sensor(0x5004, ((read_cmos_sensor(0x5004) & 0xFB) | 0x00));
+			write_cmos_sensor(0x3820, ((reg3820 & 0xB9) | 0x00));
+			write_cmos_sensor(0x3821, ((reg3821 & 0xF9) | 0x00));
+			write_cmos_sensor(0x502e, ((reg502e & 0xFC) | 0x03));
+			write_cmos_sensor(0x5001, ((reg5001 & 0xFB) | 0x00));
+			write_cmos_sensor(0x5004, ((reg5004 & 0xFB) | 0x00));
 			write_cmos_sensor(0x376b, 0x30);
 			break;
 	case IMAGE_V_MIRROR:
-			write_cmos_sensor(0x3820, ((read_cmos_sensor(0x3820) & 0xB9) | 0x46));
-			write_cmos_sensor(0x3821, ((read_cmos_sensor(0x3821) & 0xF9) | 0x06));
-			write_cmos_sensor(0x502e, ((read_cmos_sensor(0x502e) & 0xFC) | 0x00));
-			write_cmos_sensor(0x5001, ((read_cmos_sensor(0x5001) & 0xFB) | 0x04));
-			write_cmos_sensor(0x5004, ((read_cmos_sensor(0x5004) & 0xFB) | 0x04));
+			write_cmos_sensor(0x3820, ((reg3820 & 0xB9) | 0x46));
+			write_cmos_sensor(0x3821, ((reg3821 & 0xF9) | 0x06));
+			write_cmos_sensor(0x502e, ((reg502e & 0xFC) | 0x00));
+			write_cmos_sensor(0x5001, ((reg5001 & 0xFB) | 0x04));
+			write_cmos_sensor(0x5004, ((reg5004 & 0xFB) | 0x04));
 			write_cmos_sensor(0x376b, 0x36);
 			break;
 	case IMAGE_HV_MIRROR:
-			write_cmos_sensor(0x3820, ((read_cmos_sensor(0x3820) & 0xB9) | 0x46));
-			write_cmos_sensor(0x3821, ((read_cmos_sensor(0x3821) & 0xF9) | 0x00));
-			write_cmos_sensor(0x502e, ((read_cmos_sensor(0x502e) & 0xFC) | 0x00));
-			write_cmos_sensor(0x5001, ((read_cmos_sensor(0x5001) & 0xFB) | 0x04));
-			write_cmos_sensor(0x5004, ((read_cmos_sensor(0x5004) & 0xFB) | 0x00));
+			write_cmos_sensor(0x3820, ((reg3820 & 0xB9) | 0x46));
+			write_cmos_sensor(0x3821, ((reg3821 & 0xF9) | 0x00));
+			write_cmos_sensor(0x502e, ((reg502e & 0xFC) | 0x00));
+			write_cmos_sensor(0x5001, ((reg5001 & 0xFB) | 0x04));
+			write_cmos_sensor(0x5004, ((reg5004 & 0xFB) | 0x00));
 			write_cmos_sensor(0x376b, 0x36);
 			break;
 	default:
@@ -1010,7 +1024,7 @@ static void capture_setting(kal_uint16 currefps)
 #endif
 }
 
-kal_uint16 addr_data_pair_normal_video_even_shengtai_front_ov8856[] = {
+static kal_uint16 addr_data_pair_normal_video_even_shengtai_front_ov8856[] = {
 	0x0300, 0x02,
 	0x0302, 0x3d,
 	0x0303, 0x00,
@@ -1233,7 +1247,7 @@ static void custom1_setting(kal_uint16 currefps)
                        sizeof(kal_uint16));
 }
 
-kal_uint16 addr_data_pair_custom2_24fps_even_shengtai_front_ov8856[] = {
+static kal_uint16 addr_data_pair_custom2_24fps_even_shengtai_front_ov8856[] = {
 	0x3501, 0x9a,
 	0x3502, 0x20,
 	0x366d, 0x00,
@@ -2016,11 +2030,18 @@ static kal_uint32 set_test_pattern_mode(kal_bool enable)
 
 static kal_uint32 streaming_control(kal_bool enable)
 {
+	kal_uint16 target = enable ? 0x01 : 0x00;
+	int i;
+
 	LOG_INF("streaming_enable(0=Sw Standby,1=streaming): %d\n", enable);
-	if (enable)
-		write_cmos_sensor(0x0100, 0X01);
-	else
-		write_cmos_sensor(0x0100, 0x00);
+	write_cmos_sensor(0x0100, target);
+	for (i = 0; i < 5; i++) {
+		if ((read_cmos_sensor(0x0100) & 0x01) == target)
+			break;
+		mdelay(2);
+	}
+	if (i == 5)
+		LOG_INF("streaming switch timeout, target=0x%x\n", target);
 	mdelay(10);
 	return ERROR_NONE;
 }

@@ -227,6 +227,24 @@ static void write_cmos_sensor(kal_uint32 addr, kal_uint32 para)
     iWriteRegI2C(pu_send_cmd, 2, imgsensor.i2c_write_id);
 }
 
+static kal_uint16 ov02b10_frame_length_margin(kal_uint32 frame_length)
+{
+     if (frame_length <= 0x4c4)
+          return 0;
+
+     return (kal_uint16)(frame_length - 0x4c4);
+}
+
+static void ov02b10_update_frame_length_regs(kal_uint32 frame_length)
+{
+     kal_uint16 frame_margin = ov02b10_frame_length_margin(frame_length);
+
+     write_cmos_sensor(0xfd, 0x01);
+     write_cmos_sensor(0x14, frame_margin >> 8);
+     write_cmos_sensor(0x15, frame_margin & 0xFF);
+     write_cmos_sensor(0xfe, 0x02);//fresh
+}
+
 static void set_dummy(void)
 {
      if (imgsensor.frame_length%2 != 0) {
@@ -234,10 +252,7 @@ static void set_dummy(void)
      }
 
      LOG_INF("imgsensor.frame_length = %d\n", imgsensor.frame_length);
-     write_cmos_sensor(0xfd, 0x01);
-     write_cmos_sensor(0x14, (imgsensor.frame_length - 0x4c4) >> 8);
-    write_cmos_sensor(0x15, (imgsensor.frame_length - 0x4c4) & 0xFF);
-    write_cmos_sensor(0xfe, 0x02);//fresh
+     ov02b10_update_frame_length_regs(imgsensor.frame_length);
 }    /*    set_dummy  */
 
 static kal_uint32 return_sensor_id(void)
@@ -307,17 +322,11 @@ static void write_shutter(kal_uint32 shutter)
             set_max_framerate(realtime_fps, 0);
         } else {
             imgsensor.frame_length = (imgsensor.frame_length  >> 1) << 1;
-            write_cmos_sensor(0xfd, 0x01);
-            write_cmos_sensor(0x14, (imgsensor.frame_length - 0x4c4) >> 8);
-            write_cmos_sensor(0x15, (imgsensor.frame_length - 0x4c4) & 0xFF);
-            write_cmos_sensor(0xfe, 0x02);//fresh
+               ov02b10_update_frame_length_regs(imgsensor.frame_length);
             }
     } else {
         imgsensor.frame_length = (imgsensor.frame_length  >> 1) << 1;
-        write_cmos_sensor(0xfd, 0x01);
-        write_cmos_sensor(0x14, (imgsensor.frame_length - 0x4c4) >> 8);
-        write_cmos_sensor(0x15, (imgsensor.frame_length - 0x4c4) & 0xFF);
-        write_cmos_sensor(0xfe, 0x02);//fresh
+          ov02b10_update_frame_length_regs(imgsensor.frame_length);
    }
 
     write_cmos_sensor(0xfd, 0x01);
@@ -350,9 +359,12 @@ static void set_shutter_frame_length(kal_uint16 shutter,
      spin_unlock_irqrestore(&imgsensor_drv_lock, flags);
 
      spin_lock(&imgsensor_drv_lock);
-     if (frame_length > 1)
+     if (frame_length > 1 && frame_length > imgsensor.frame_length)
           dummy_line = frame_length - imgsensor.frame_length;
      imgsensor.frame_length = imgsensor.frame_length + dummy_line;
+
+     if (imgsensor.frame_length < imgsensor.min_frame_length)
+          imgsensor.frame_length = imgsensor.min_frame_length;
 
      if (shutter > imgsensor.frame_length - imgsensor_info.margin)
           imgsensor.frame_length = shutter + imgsensor_info.margin;
@@ -384,17 +396,11 @@ static void set_shutter_frame_length(kal_uint16 shutter,
          set_max_framerate(realtime_fps, 0);
           } else {
           imgsensor.frame_length = (imgsensor.frame_length  >> 1) << 1;
-        write_cmos_sensor(0xfd, 0x01);
-         write_cmos_sensor(0x14, (imgsensor.frame_length - 0x4c4) >> 8);
-         write_cmos_sensor(0x15, (imgsensor.frame_length - 0x4c4) & 0xFF);
-        write_cmos_sensor(0xfe, 0x02);
+        ov02b10_update_frame_length_regs(imgsensor.frame_length);
           }
      } else {
          imgsensor.frame_length = (imgsensor.frame_length  >> 1) << 1;
-        write_cmos_sensor(0xfd, 0x01);
-         write_cmos_sensor(0x14, (imgsensor.frame_length - 0x4c4) >> 8);
-         write_cmos_sensor(0x15, (imgsensor.frame_length - 0x4c4) & 0xFF);
-        write_cmos_sensor(0xfe, 0x02);
+        ov02b10_update_frame_length_regs(imgsensor.frame_length);
      }
 
      /* Update Shutter */
@@ -429,35 +435,32 @@ static void set_shutter_frame_length(kal_uint16 shutter,
 static kal_uint16 set_gain(kal_uint16 gain)
 {
     kal_uint8  iReg;
+     kal_uint8  cur_gain;
 
-    if((gain >= 0x40) && (gain <= (15*0x40))) //base gain = 0x40
-    {
-        iReg = 0x10 * gain/BASEGAIN;        //change mtk gain base to aptina gain base
+     if (gain < BASEGAIN)
+          gain = BASEGAIN;
+     else if (gain > (15 * BASEGAIN))
+          gain = 15 * BASEGAIN;
 
-        if(iReg<=0x10)
-        {
-            write_cmos_sensor(0xfd, 0x01);
-            write_cmos_sensor(0x22, 0x10);//0x23
-            write_cmos_sensor(0xfe, 0x02);//fresh
-            LOG_INF("EVENC_SHENGTAI_MACRO_OV02B10MIPI_SetGain = 16");
-        }
-        else if(iReg>= 0xf8)//gpw
-        {
-            write_cmos_sensor(0xfd, 0x01);
-            write_cmos_sensor(0x22,0xf8);
-            write_cmos_sensor(0xfe, 0x02);//fresh
-            LOG_INF("EVENC_SHENGTAI_MACRO_OV02B10MIPI_SetGain = 160");
-        }
-        else
-        {
-            write_cmos_sensor(0xfd, 0x01);
-            write_cmos_sensor(0x22, (kal_uint8)iReg);
-            write_cmos_sensor(0xfe, 0x02);//fresh
-            LOG_INF("EVENC_SHENGTAI_MACRO_OV02B10MIPI_SetGain = %d",iReg);
-        }
-    }
-    else
-        LOG_INF("error gain setting");
+     iReg = (kal_uint8)(0x10 * gain / BASEGAIN);
+     if (iReg < 0x10)
+          iReg = 0x10;
+     else if (iReg > 0xf8)
+          iReg = 0xf8;
+
+     spin_lock(&imgsensor_drv_lock);
+     cur_gain = (kal_uint8)imgsensor.gain;
+     if (cur_gain == iReg) {
+          spin_unlock(&imgsensor_drv_lock);
+          return gain;
+     }
+     imgsensor.gain = iReg;
+     spin_unlock(&imgsensor_drv_lock);
+
+     write_cmos_sensor(0xfd, 0x01);
+     write_cmos_sensor(0x22, iReg);
+     write_cmos_sensor(0xfe, 0x02);//fresh
+     LOG_INF("EVENC_SHENGTAI_MACRO_OV02B10MIPI_SetGain = %d", iReg);
 
     return gain;
 }    /*    set_gain  */
@@ -469,21 +472,25 @@ static void set_mirror_flip(kal_uint8 image_mirror)
           case IMAGE_NORMAL:
                write_cmos_sensor(0xfd, 0x01);
                write_cmos_sensor(0x12, 0x00);  /* B */
+               write_cmos_sensor(0xfe, 0x02);
                break;
 
           case IMAGE_H_MIRROR:
                write_cmos_sensor(0xfd, 0x01);
                write_cmos_sensor(0x12, 0x02);  /* Gb */
+               write_cmos_sensor(0xfe, 0x02);
                break;
 
           case IMAGE_V_MIRROR:
                write_cmos_sensor(0xfd, 0x01);
                write_cmos_sensor(0x12, 0x01);  /* Gr */
+               write_cmos_sensor(0xfe, 0x02);
                break;
 
           case IMAGE_HV_MIRROR:
                write_cmos_sensor(0xfd, 0x01);
                write_cmos_sensor(0x12, 0x03);  /* R */
+               write_cmos_sensor(0xfe, 0x02);
                break;
           default:
                LOG_INF("Error image_mirror setting\n");
@@ -1868,15 +1875,20 @@ static kal_uint32 set_test_pattern_mode(kal_bool enable)
 
 static kal_uint32 streaming_control(kal_bool enable)
 {
-     //LOG_INF("streaming_control enable =%d\n", enable);
-     if (enable){
-          write_cmos_sensor(0xfd, 0x03);
-          write_cmos_sensor(0xc2, 0x01);
+     kal_uint16 target = enable ? 0x01 : 0x00;
+     int i;
 
-     }else{
+     //LOG_INF("streaming_control enable =%d\n", enable);
+     write_cmos_sensor(0xfd, 0x03);
+     write_cmos_sensor(0xc2, target);
+     for (i = 0; i < 5; i++) {
+          mdelay(2);
           write_cmos_sensor(0xfd, 0x03);
-          write_cmos_sensor(0xc2, 0x00);
+          if ((read_cmos_sensor(0xc2) & 0x01) == target)
+               break;
      }
+     if (i == 5)
+          LOG_INF("streaming switch timeout, target=0x%x\n", target);
      mdelay(10);
 
      return ERROR_NONE;

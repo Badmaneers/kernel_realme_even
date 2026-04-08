@@ -264,7 +264,7 @@ static kal_uint16 ov13b10_table_write_cmos_sensor(
 {
 	char puSendCmd[I2C_BUFFER_LEN];
 	kal_uint32 tosend, IDX;
-	kal_uint16 addr = 0, addr_last = 0, data;
+	kal_uint16 addr = 0, data;
 
 	tosend = 0;
 	IDX = 0;
@@ -277,13 +277,11 @@ static kal_uint16 ov13b10_table_write_cmos_sensor(
 			data = para[IDX + 1];
 			puSendCmd[tosend++] = (char)(data & 0xFF);
 			IDX += 2;
-			addr_last = addr;
 
 		}
 #if MULTI_WRITE
 		if ((I2C_BUFFER_LEN - tosend) < 3 ||
-			len == IDX ||
-			addr != addr_last) {
+			len == IDX) {
 			iBurstWriteReg_multi(puSendCmd, tosend,
 				imgsensor.i2c_write_id,
 				3, imgsensor_info.i2c_speed);
@@ -424,6 +422,9 @@ static void set_shutter_frame_length(kal_uint16 shutter,
 	if (target_frame_length > 1)
 		imgsensor.frame_length = target_frame_length;
 
+	if (imgsensor.frame_length < imgsensor.min_frame_length)
+		imgsensor.frame_length = imgsensor.min_frame_length;
+
 	if (shutter > imgsensor.frame_length - imgsensor_info.margin)
 		imgsensor.frame_length = shutter + imgsensor_info.margin;
 
@@ -498,12 +499,16 @@ static kal_uint16 set_gain(kal_uint16 gain)
 
 	reg_gain = gain2reg(gain);
 	spin_lock_irqsave(&imgsensor_drv_lock, flags);
+	if (imgsensor.gain == reg_gain) {
+		spin_unlock_irqrestore(&imgsensor_drv_lock, flags);
+		return gain;
+	}
 	imgsensor.gain = reg_gain;
 	spin_unlock_irqrestore(&imgsensor_drv_lock, flags);
 
 	LOG_DBG("gain = %d , reg_gain = 0x%x\n ", gain, reg_gain);
-    write_cmos_sensor(0x03508,(reg_gain >> 8));
-    write_cmos_sensor(0x03509,(reg_gain&0xff));
+	write_cmos_sensor(0x3508, (reg_gain >> 8));
+	write_cmos_sensor(0x3509, (reg_gain & 0xff));
 	return gain;
 }
 
@@ -514,19 +519,30 @@ static void ihdr_write_shutter_gain(kal_uint16 le,
 
 static void set_mirror_flip(kal_uint8 image_mirror)
 {
-    LOG_INF("image_mirror = %d\n", image_mirror);
+	kal_uint16 mirror;
 
-    /********************************************************
-       *
-       *   0x3820[2] ISP Vertical flip
-       *   0x3820[1] Sensor Vertical flip
-       *
-       *   0x3821[2] ISP Horizontal mirror
-       *   0x3821[1] Sensor Horizontal mirror
-       *
-       *   ISP and Sensor flip or mirror register bit should be the same!!
-       *
-       ********************************************************/
+	LOG_INF("image_mirror = %d\n", image_mirror);
+
+	mirror = read_cmos_sensor(0x0101);
+	mirror &= ~0x03;
+
+	switch (image_mirror) {
+	case IMAGE_NORMAL:
+		write_cmos_sensor(0x0101, mirror | 0x00);
+		break;
+	case IMAGE_V_MIRROR:
+		write_cmos_sensor(0x0101, mirror | 0x01);
+		break;
+	case IMAGE_H_MIRROR:
+		write_cmos_sensor(0x0101, mirror | 0x02);
+		break;
+	case IMAGE_HV_MIRROR:
+		write_cmos_sensor(0x0101, mirror | 0x03);
+		break;
+	default:
+		LOG_INF("Error image_mirror setting\n");
+		break;
+	}
 }
 
 
@@ -2311,14 +2327,23 @@ static kal_uint32 get_sensor_temperature(void)
 
 static kal_uint32 streaming_control(kal_bool enable)
 {
+	kal_uint16 stream_state = 0;
+	int i;
+
 	LOG_DBG("streaming_enable(0=Sw Standby,1=streaming): %d\n", enable);
-	if (enable){
-		write_cmos_sensor(0x0100, 0x01);
+	write_cmos_sensor(0x0100, enable ? 0x01 : 0x00);
+
+	for (i = 0; i < 30; i++) {
+		stream_state = read_cmos_sensor(0x0100) & 0x01;
+		if (stream_state == (enable ? 0x01 : 0x00))
+			return ERROR_NONE;
+		mdelay(2);
 	}
-	else{
-		write_cmos_sensor(0x0100, 0x00);
+
+	LOG_INF("streaming state mismatch req=%d reg=0x%x\n",
+		enable, stream_state);
+	if (!enable)
 		mdelay(10);
-	}
 
 	return ERROR_NONE;
 }
