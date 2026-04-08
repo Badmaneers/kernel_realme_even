@@ -134,13 +134,14 @@ static struct g_clk_info *g_clk;
 static unsigned int g_ptpod_opp_idx_num;
 static unsigned int *g_ptpod_opp_idx_table;
 static unsigned int g_ptpod_opp_idx_table_segment[] = {
-	0, 2, 4, 6,
-	8, 10, 12, 14,
-	16, 18, 20, 23,
-	25, 27, 29, 31
+	1, 3, 5, 7,
+	9, 11, 13, 15,
+	17, 19, 21, 24,
+	26, 28, 30, 32
 };
 
 static struct g_opp_table_info g_opp_table_segment[] = {
+GPUOP(SEG_GPU_DVFS_FREQ_OC, SEG_GPU_DVFS_VOLT_OC, SEG_GPU_DVFS_VSRAM_OC),
 GPUOP(SEG_GPU_DVFS_FREQ0,  SEG_GPU_DVFS_VOLT0,  SEG_GPU_DVFS_VSRAM0),
 GPUOP(SEG_GPU_DVFS_FREQ1,  SEG_GPU_DVFS_VOLT1,  SEG_GPU_DVFS_VSRAM1),
 GPUOP(SEG_GPU_DVFS_FREQ2,  SEG_GPU_DVFS_VOLT2,  SEG_GPU_DVFS_VSRAM2),
@@ -2592,15 +2593,11 @@ static void __mt_gpufreq_setup_opp_table(struct g_opp_table_info *freqs, int num
 
 	/* setup segment max/min opp_idx */
 	if (g_segment_id == MT6767_SEGMENT)
-		g_segment_max_opp_idx = 15;
-	else if (g_segment_id == MT6769T_SEGMENT)
-		g_segment_max_opp_idx = 2;
-	else if (g_segment_id == MT6769Z_SEGMENT)
-		g_segment_max_opp_idx = 0;
+		g_segment_max_opp_idx = 16;
 	else
-		g_segment_max_opp_idx = 7;
+		g_segment_max_opp_idx = 0;
 
-	g_segment_min_opp_idx = 31;
+	g_segment_min_opp_idx = num - 1;
 
 	g_max_opp_idx_num = num;
 	g_max_limited_idx = g_segment_max_opp_idx;
