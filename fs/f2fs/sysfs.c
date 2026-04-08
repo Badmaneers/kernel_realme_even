@@ -222,9 +222,8 @@ static ssize_t moved_blocks_background_show(struct f2fs_attr *a,
 		(unsigned long long)(si->bg_data_blks + si->bg_node_blks));
 }
 
-static ssize_t __sbi_show_value(struct f2fs_attr *a,
-		struct f2fs_sb_info *sbi, char *buf,
-		unsigned char *value)
+static ssize_t avg_vblocks_show(struct f2fs_attr *a,
+		struct f2fs_sb_info *sbi, char *buf)
 {
 	struct f2fs_stat_info *si = F2FS_STAT(sbi);
 
