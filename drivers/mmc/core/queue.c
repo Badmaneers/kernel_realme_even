@@ -409,7 +409,8 @@ static int mmc_mq_init_queue(struct mmc_queue *mq, int q_depth,
 
 	mq->queue->queue_lock = lock;
 	mq->queue->queuedata = mq;
-	mq->queue->backing_dev_info->ra_pages = 128;
+	/* Bump readahead from 512KB to 1MB for better sequential eMMC read throughput. */
+	mq->queue->backing_dev_info->ra_pages = 256;
 
 	return 0;
 
