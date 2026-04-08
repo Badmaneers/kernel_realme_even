@@ -265,6 +265,12 @@ static void set_max_framerate(UINT16 framerate,kal_bool min_framelength_en)
     kal_uint32 frame_length = imgsensor.frame_length;
 
 
+    if (!framerate || !imgsensor.line_length) {
+         LOG_INF("invalid framerate(%u) or line_length(%u)\n",
+              framerate, imgsensor.line_length);
+         return;
+    }
+
     frame_length = imgsensor.pclk / framerate * 10 / imgsensor.line_length;
 
     spin_lock(&imgsensor_drv_lock);
@@ -288,6 +294,7 @@ static void set_max_framerate(UINT16 framerate,kal_bool min_framelength_en)
 static void write_shutter(kal_uint32 shutter)
 {
     kal_uint32 realtime_fps = 0;
+     kal_bool frame_length_written = KAL_FALSE;
 
     spin_lock(&imgsensor_drv_lock);
 
@@ -323,11 +330,16 @@ static void write_shutter(kal_uint32 shutter)
         } else {
             imgsensor.frame_length = (imgsensor.frame_length  >> 1) << 1;
                ov02b10_update_frame_length_regs(imgsensor.frame_length);
+               frame_length_written = KAL_TRUE;
             }
     } else {
         imgsensor.frame_length = (imgsensor.frame_length  >> 1) << 1;
           ov02b10_update_frame_length_regs(imgsensor.frame_length);
+          frame_length_written = KAL_TRUE;
    }
+
+     if (!frame_length_written)
+           ov02b10_update_frame_length_regs(imgsensor.frame_length);
 
     write_cmos_sensor(0xfd, 0x01);
     write_cmos_sensor(0x0e, (shutter >> 8) & 0xFF);
@@ -353,6 +365,7 @@ static void set_shutter_frame_length(kal_uint16 shutter,
      unsigned long flags;
      kal_uint16 realtime_fps = 0;
      kal_int32 dummy_line = 0;
+     kal_bool frame_length_written = KAL_FALSE;
 
      spin_lock_irqsave(&imgsensor_drv_lock, flags);
      imgsensor.shutter = shutter;
@@ -397,11 +410,16 @@ static void set_shutter_frame_length(kal_uint16 shutter,
           } else {
           imgsensor.frame_length = (imgsensor.frame_length  >> 1) << 1;
         ov02b10_update_frame_length_regs(imgsensor.frame_length);
+                         frame_length_written = KAL_TRUE;
           }
      } else {
          imgsensor.frame_length = (imgsensor.frame_length  >> 1) << 1;
         ov02b10_update_frame_length_regs(imgsensor.frame_length);
+                     frame_length_written = KAL_TRUE;
      }
+
+           if (!frame_length_written)
+                         ov02b10_update_frame_length_regs(imgsensor.frame_length);
 
      /* Update Shutter */
       write_cmos_sensor(0xfd, 0x01);
@@ -493,7 +511,11 @@ static void set_mirror_flip(kal_uint8 image_mirror)
                write_cmos_sensor(0xfe, 0x02);
                break;
           default:
-               LOG_INF("Error image_mirror setting\n");
+               LOG_INF("invalid image_mirror=%u, fallback to IMAGE_NORMAL\n",
+                    image_mirror);
+               write_cmos_sensor(0xfd, 0x01);
+               write_cmos_sensor(0x12, 0x00);
+               write_cmos_sensor(0xfe, 0x02);
      }
 }
 
@@ -1712,6 +1734,12 @@ static kal_uint32 set_max_framerate_by_scenario(enum MSDK_SCENARIO_ID_ENUM scena
 
 //     LOG_INF("scenario_id = %d, framerate = %d\n", scenario_id, framerate);
 
+     if (framerate == 0) {
+          LOG_INF("invalid framerate=%u for scenario=%d\n",
+               framerate, scenario_id);
+          return ERROR_NONE;
+     }
+
      switch (scenario_id) {
      case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
           frame_length = imgsensor_info.pre.pclk / framerate * 10 / imgsensor_info.pre.linelength;
@@ -1876,20 +1904,23 @@ static kal_uint32 set_test_pattern_mode(kal_bool enable)
 static kal_uint32 streaming_control(kal_bool enable)
 {
      kal_uint16 target = enable ? 0x01 : 0x00;
+     kal_uint16 stream_state = 0;
      int i;
 
      //LOG_INF("streaming_control enable =%d\n", enable);
      write_cmos_sensor(0xfd, 0x03);
      write_cmos_sensor(0xc2, target);
-     for (i = 0; i < 5; i++) {
+     for (i = 0; i < 30; i++) {
           mdelay(2);
           write_cmos_sensor(0xfd, 0x03);
-          if ((read_cmos_sensor(0xc2) & 0x01) == target)
-               break;
+          stream_state = read_cmos_sensor(0xc2) & 0x01;
+          if (stream_state == target)
+               return ERROR_NONE;
      }
-     if (i == 5)
-          LOG_INF("streaming switch timeout, target=0x%x\n", target);
-     mdelay(10);
+     LOG_INF("streaming switch timeout, target=0x%x reg=0x%x\n",
+          target, stream_state);
+     if (!enable)
+          mdelay(10);
 
      return ERROR_NONE;
 }

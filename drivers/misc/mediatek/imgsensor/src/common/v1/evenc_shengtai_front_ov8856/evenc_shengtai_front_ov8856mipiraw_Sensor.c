@@ -233,6 +233,11 @@ static kal_uint16 evenc_shengtai_front_ov8856_table_write_cmos_sensor(kal_uint16
 	kal_uint32 tosend, IDX;
 	kal_uint16 addr = 0, data;
 
+	if (!para || len < 2 || (len & 0x1)) {
+		LOG_INF("invalid table data para=%p len=%u\n", para, len);
+		return 0;
+	}
+
 	tosend = 0;
 	IDX = 0;
 	while (len > IDX) {
@@ -293,6 +298,11 @@ static void set_max_framerate(UINT16 framerate, kal_bool min_framelength_en)
 	kal_uint32 frame_length;
 
 	LOG_INF("framerate = %d, min framelength should enable?\n", framerate);
+	if (!framerate || !imgsensor.line_length) {
+		LOG_INF("invalid framerate(%u) or line_length(%u)\n",
+			framerate, imgsensor.line_length);
+		return;
+	}
 
 	frame_length = imgsensor.pclk / framerate * 10 / imgsensor.line_length;
 	spin_lock(&imgsensor_drv_lock);
@@ -317,6 +327,7 @@ static void set_shutter_frame_length(kal_uint16 shutter, kal_uint16 frame_length
 	unsigned long flags;
 	kal_uint16 realtime_fps = 0;
 	kal_int32 dummy_line = 0;
+	kal_bool frame_length_written = KAL_FALSE;
 
 	spin_lock_irqsave(&imgsensor_drv_lock, flags);
 	imgsensor.shutter = shutter;
@@ -351,11 +362,18 @@ static void set_shutter_frame_length(kal_uint16 shutter, kal_uint16 frame_length
 		/* Extend frame length*/
 		write_cmos_sensor(0x380e, imgsensor.frame_length >> 8);
 		write_cmos_sensor(0x380f, imgsensor.frame_length & 0xFF);
+		frame_length_written = KAL_TRUE;
 		}
 	} else {
 		/* Extend frame length*/
 		 write_cmos_sensor(0x380e, imgsensor.frame_length >> 8);
 		 write_cmos_sensor(0x380f, imgsensor.frame_length & 0xFF);
+		 frame_length_written = KAL_TRUE;
+	}
+
+	if (!frame_length_written) {
+		write_cmos_sensor(0x380e, imgsensor.frame_length >> 8);
+		write_cmos_sensor(0x380f, imgsensor.frame_length & 0xFF);
 	}
 
 	/* Update Shutter*/
@@ -387,6 +405,7 @@ static void set_shutter(kal_uint16 shutter)
 {
 	unsigned long flags;
 	kal_uint16 realtime_fps = 0;
+	kal_bool frame_length_written = KAL_FALSE;
 
 	spin_lock_irqsave(&imgsensor_drv_lock, flags);
 	imgsensor.shutter = shutter;
@@ -418,9 +437,16 @@ static void set_shutter(kal_uint16 shutter)
 		/* Extend frame length*/
 		write_cmos_sensor(0x380e, imgsensor.frame_length >> 8);
 		write_cmos_sensor(0x380f, imgsensor.frame_length & 0xFF);
+		frame_length_written = KAL_TRUE;
 		}
 	} else {
 		/* Extend frame length*/
+		write_cmos_sensor(0x380e, imgsensor.frame_length >> 8);
+		write_cmos_sensor(0x380f, imgsensor.frame_length & 0xFF);
+		frame_length_written = KAL_TRUE;
+	}
+
+	if (!frame_length_written) {
 		write_cmos_sensor(0x380e, imgsensor.frame_length >> 8);
 		write_cmos_sensor(0x380f, imgsensor.frame_length & 0xFF);
 	}
@@ -567,7 +593,14 @@ static void set_mirror_flip(kal_uint8 image_mirror)
 			write_cmos_sensor(0x376b, 0x36);
 			break;
 	default:
-			LOG_INF("Error image_mirror setting\n");
+			LOG_INF("invalid image_mirror=%u, fallback to IMAGE_NORMAL\n",
+				image_mirror);
+			write_cmos_sensor(0x3820, ((reg3820 & 0xB9) | 0x00));
+			write_cmos_sensor(0x3821, ((reg3821 & 0xF9) | 0x06));
+			write_cmos_sensor(0x502e, ((reg502e & 0xFC) | 0x03));
+			write_cmos_sensor(0x5001, ((reg5001 & 0xFB) | 0x00));
+			write_cmos_sensor(0x5004, ((reg5004 & 0xFB) | 0x04));
+			write_cmos_sensor(0x376b, 0x30);
 	}
 
 }
@@ -1861,6 +1894,11 @@ static kal_uint32 set_max_framerate_by_scenario(
 	kal_uint32 frame_length;
 
 	LOG_INF("scenario_id = %d, framerate = %d\n", scenario_id, framerate);
+	if (framerate == 0) {
+		LOG_INF("invalid framerate=%u for scenario=%d\n",
+			framerate, scenario_id);
+		return ERROR_NONE;
+	}
 	switch (scenario_id) {
 	case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
 			frame_length = imgsensor_info.pre.pclk / framerate * 10 / imgsensor_info.pre.linelength;
@@ -2014,18 +2052,21 @@ static kal_uint32 set_test_pattern_mode(kal_bool enable)
 static kal_uint32 streaming_control(kal_bool enable)
 {
 	kal_uint16 target = enable ? 0x01 : 0x00;
+	kal_uint16 stream_state = 0;
 	int i;
 
 	LOG_INF("streaming_enable(0=Sw Standby,1=streaming): %d\n", enable);
 	write_cmos_sensor(0x0100, target);
-	for (i = 0; i < 5; i++) {
-		if ((read_cmos_sensor(0x0100) & 0x01) == target)
-			break;
+	for (i = 0; i < 30; i++) {
+		stream_state = read_cmos_sensor(0x0100) & 0x01;
+		if (stream_state == target)
+			return ERROR_NONE;
 		mdelay(2);
 	}
-	if (i == 5)
-		LOG_INF("streaming switch timeout, target=0x%x\n", target);
-	mdelay(10);
+	LOG_INF("streaming switch timeout, target=0x%x reg=0x%x\n",
+		target, stream_state);
+	if (!enable)
+		mdelay(10);
 	return ERROR_NONE;
 }
 

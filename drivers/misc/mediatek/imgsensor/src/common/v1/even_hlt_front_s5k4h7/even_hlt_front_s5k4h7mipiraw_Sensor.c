@@ -299,6 +299,11 @@ static kal_uint16 table_write_cmos_sensor(kal_uint16 *para,
 	kal_uint32 tosend, IDX;
 	kal_uint16 addr = 0, data;
 
+	if (!para || len < 2 || (len & 0x1)) {
+		LOG_INF("invalid table data para=%p len=%u\n", para, len);
+		return 0;
+	}
+
 	tosend = 0;
 	IDX = 0;
 
@@ -369,6 +374,11 @@ static void set_max_framerate(UINT16 framerate, kal_bool min_framelength_en)
 
 	LOG_INF("framerate = %d, min_framelength_en=%d\n",
 		framerate, min_framelength_en);
+	if (!framerate || !imgsensor.line_length) {
+		LOG_INF("invalid framerate(%u) or line_length(%u)\n",
+			framerate, imgsensor.line_length);
+		return;
+	}
 	frame_length = imgsensor.pclk / framerate * 10 / imgsensor.line_length;
 	LOG_INF("frame_length =%d\n", frame_length);
 	spin_lock(&imgsensor_drv_lock);
@@ -397,6 +407,7 @@ static void set_max_framerate(UINT16 framerate, kal_bool min_framelength_en)
 static void write_shutter(kal_uint32 shutter)
 {
 	kal_uint16 realtime_fps = 0;
+	kal_bool frame_length_written = KAL_FALSE;
 	// shutter=2512;//add for debug capture framerate
 	/* 0x3500, 0x3501, 0x3502 will increase VBLANK to get exposure
 	 * larger than frame exposure
@@ -419,6 +430,7 @@ static void write_shutter(kal_uint32 shutter)
 		spin_unlock(&imgsensor_drv_lock);
 		write_cmos_sensor_8(0x0340, imgsensor.frame_length >> 8);
 		write_cmos_sensor_8(0x0341, imgsensor.frame_length & 0xFF);
+		frame_length_written = KAL_TRUE;
 		write_cmos_sensor_8(0x0202, (shutter >> 8) & 0xFF);
 		write_cmos_sensor_8(0x0203, shutter & 0xFF);
 		LOG_INF("shutter =%d, framelength =%d\n",
@@ -466,6 +478,7 @@ static void write_shutter(kal_uint32 shutter)
 				write_cmos_sensor_8(0x0341,imgsensor.frame_length & 0xFF);
 				write_cmos_sensor_8(0x0340,imgsensor.frame_length >> 8);
 			}
+			frame_length_written = KAL_TRUE;
 		}
 	} else {
 		// Extend frame length
@@ -477,11 +490,14 @@ static void write_shutter(kal_uint32 shutter)
 			write_cmos_sensor_8(0x0340, imgsensor.frame_length >> 8);
 
 		}
+		frame_length_written = KAL_TRUE;
 	}
 
 	// Update Shutter
-	write_cmos_sensor_8(0x0340, imgsensor.frame_length >> 8);
-	write_cmos_sensor_8(0x0341, imgsensor.frame_length & 0xFF);
+	if (!frame_length_written) {
+		write_cmos_sensor_8(0x0340, imgsensor.frame_length >> 8);
+		write_cmos_sensor_8(0x0341, imgsensor.frame_length & 0xFF);
+	}
 	write_cmos_sensor_8(0x0202, (shutter >> 8) & 0xFF);
 	write_cmos_sensor_8(0x0203, shutter & 0xFF);
 
@@ -648,25 +664,34 @@ static void night_mode(kal_bool enable)
 
 static kal_uint32 streaming_control(kal_bool enable)
 {
-	int timeout = 100;
+	UINT16 current_fps = imgsensor.current_fps;
+	int timeout;
 	int i = 0;
 	int framecnt = 0;
 	kal_uint8 stream_state = 0;
 
+	if (current_fps == 0)
+		current_fps = imgsensor_info.pre.max_framerate;
+	if (current_fps == 0) {
+		LOG_INF("invalid current_fps\n");
+		return ERROR_NONE;
+	}
+	timeout = (10000 / current_fps) + 1;
+
 	LOG_INF("streaming_enable(0=Sw Standby,1=streaming): %d\n", enable);
 	if (enable) {
 		write_cmos_sensor_8(0x0100, 0x01);
-		for (i = 0; i < 30; i++) {
+		for (i = 0; i < timeout; i++) {
+			mdelay(5);
 			stream_state = read_cmos_sensor_8(0x0100) & 0x01;
 			if (stream_state == 0x01)
 				return ERROR_NONE;
-			mdelay(2);
 		}
 		LOG_INF("Stream On mismatch! reg=0x%x.\n", stream_state);
 	} else {
 		write_cmos_sensor_8(0x0100, 0x00);
 		for (i = 0; i < timeout; i++) {
-			mdelay(10);
+			mdelay(5);
 			framecnt = read_cmos_sensor_8(0x0005);
 			stream_state = read_cmos_sensor_8(0x0100) & 0x01;
 			if (framecnt == 0xFF || stream_state == 0x00) {
