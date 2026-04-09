@@ -9,6 +9,8 @@
 #include <ged_sysfs.h>
 #include <ged_base.h>
 
+#define GED_FREQ_KHZ_PER_MHZ 1000
+
 static struct kobject *g_gpu_kobj;
 
 ssize_t gpu_available_governor_show(struct kobject *kobj,
@@ -35,6 +37,7 @@ ssize_t gpu_clock_show(struct kobject *kobj,
 	unsigned int gpu_freq = 0;
 
 	gpu_freq = mt_gpufreq_get_freq_by_idx(mt_gpufreq_get_cur_freq_index());
+	gpu_freq /= GED_FREQ_KHZ_PER_MHZ;
 
 	return scnprintf(buf, PAGE_SIZE, "%u\n", gpu_freq);
 }
@@ -58,7 +61,7 @@ ssize_t gpu_freq_table_show(struct kobject *kobj,
 
 	for (idx = max_opp_idx; count < table_num; count++) {
 		length = scnprintf(temp + pos, 1024 - pos,
-				"%u ", power_table[idx + count].gpufreq_khz);
+				"%u ", power_table[idx + count].gpufreq_khz / GED_FREQ_KHZ_PER_MHZ);
 		pos += length;
 	}
 
@@ -83,6 +86,7 @@ ssize_t gpu_max_clock_show(struct kobject *kobj,
 	mtk_get_gpu_custom_upbound_freq(&max_clock_custom);
 	max_clock = (max_clock_custom < max_clock) ?
 			max_clock_custom : max_clock;
+	max_clock /= GED_FREQ_KHZ_PER_MHZ;
 
 	return scnprintf(buf, PAGE_SIZE, "%u\n", max_clock);
 }
@@ -91,6 +95,7 @@ static ssize_t gpu_max_clock_store(struct kobject *kobj,
 		struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	int max_freq = 0;
+	int max_freq_khz = 0;
 	struct mt_gpufreq_power_table_info *power_table = NULL;
 	unsigned int table_num = 0;
 	unsigned int max_opp_idx = 0;
@@ -105,19 +110,21 @@ static ssize_t gpu_max_clock_store(struct kobject *kobj,
 				if (max_freq <= 0)
 					return -EINVAL;
 
+				max_freq_khz = max_freq * GED_FREQ_KHZ_PER_MHZ;
+
 				power_table = pass_gpu_table_to_eara();
 				table_num = mt_gpufreq_get_dvfs_table_num();
 				max_opp_idx = mt_gpufreq_get_seg_max_opp_index();
 
 				for (idx = max_opp_idx; index_count < table_num; index_count++) {
-					if (max_freq ==
+					if (max_freq_khz ==
 					    power_table[idx + index_count].gpufreq_khz) {
 						mtk_custom_upbound_gpu_freq(index_count);
 						return count;
 					}
 				}
 
-				GED_LOGE("SKI: set max clock failed (%d not support)!\n", max_freq);
+				GED_LOGE("SKI: set max clock failed (%d MHz not support)!\n", max_freq);
 			}
 		}
 	}
@@ -136,6 +143,7 @@ ssize_t gpu_min_clock_show(struct kobject *kobj,
 	mtk_get_gpu_custom_boost_freq(&min_clock_custom);
 	min_clock = (min_clock_custom > min_clock) ?
 			min_clock_custom : min_clock;
+	min_clock /= GED_FREQ_KHZ_PER_MHZ;
 
 	return scnprintf(buf, PAGE_SIZE, "%lu\n", min_clock);
 }
@@ -144,6 +152,7 @@ static ssize_t gpu_min_clock_store(struct kobject *kobj,
 		struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	int min_freq = 0;
+	int min_freq_khz = 0;
 	struct mt_gpufreq_power_table_info *power_table = NULL;
 	unsigned int table_num = 0;
 	unsigned int max_opp_idx = 0;
@@ -158,19 +167,21 @@ static ssize_t gpu_min_clock_store(struct kobject *kobj,
 				if (min_freq <= 0)
 					return -EINVAL;
 
+				min_freq_khz = min_freq * GED_FREQ_KHZ_PER_MHZ;
+
 				power_table = pass_gpu_table_to_eara();
 				table_num = mt_gpufreq_get_dvfs_table_num();
 				max_opp_idx = mt_gpufreq_get_seg_max_opp_index();
 
 				for (idx = max_opp_idx; index_count < table_num; index_count++) {
-					if (min_freq ==
+					if (min_freq_khz ==
 					    power_table[idx + index_count].gpufreq_khz) {
 						mtk_custom_boost_gpu_freq(index_count);
 						return count;
 					}
 				}
 
-				GED_LOGE("SKI: set min clock failed (%d not support)!\n", min_freq);
+				GED_LOGE("SKI: set min clock failed (%d MHz not support)!\n", min_freq);
 			}
 		}
 	}
