@@ -1219,11 +1219,6 @@ int sysctl_sched_uclamp_handler(struct ctl_table *table, int write,
 		uclamp_update_root_tg();
 #endif
 
-	if (old_min_rt != sysctl_sched_uclamp_util_min_rt_default) {
-		static_branch_enable(&sched_uclamp_used);
-		uclamp_sync_util_min_rt_default();
-	}
-
 	/*
 	 * We update all RUNNABLE tasks only when task groups are in use.
 	 * Otherwise, keep it simple and do just a lazy update at each next
@@ -1286,14 +1281,11 @@ static void __setscheduler_uclamp(struct task_struct *p,
 		if (uc_se->user_defined)
 			continue;
 
-		/*
-		 * RT by default have a 100% boost value that could be modified
-		 * at runtime.
-		 */
+		/* By default, RT tasks always get 100% boost */
 		if (unlikely(rt_task(p) && clamp_id == UCLAMP_MIN))
-			__uclamp_update_util_min_rt_default(p);
-		else
-			uclamp_se_set(uc_se, uclamp_none(clamp_id), false);
+			clamp_value = uclamp_none(UCLAMP_MAX);
+
+		uclamp_se_set(uc_se, clamp_value, false);
 
 	}
 

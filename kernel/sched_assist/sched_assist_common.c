@@ -81,7 +81,7 @@ inline bool ux_debug_enable(void)
 
 static noinline int tracing_mark_write(const char *buf)
 {
-	trace_printk(buf);
+	trace_printk("%s", buf);
 	return 0;
 }
 
