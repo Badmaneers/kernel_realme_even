@@ -138,9 +138,19 @@ show_defconfigs() {
     echo ""
     read -p "Select the defconfig you want to process: " choice
 
-    # Check if the choice is within the range of files
-    if [ $choice -ge 0 ] && [ $choice -lt ${#defconfigs[@]} ]; then
+    # Accept either an index or a direct defconfig file name.
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 0 ] && [ "$choice" -lt "${#defconfigs[@]}" ]; then
         export DEFCONFIG="${defconfigs[choice]}"
+    elif [[ -n "$choice" ]]; then
+        for cfg in "${defconfigs[@]}"; do
+            if [[ "$cfg" == "$choice" ]]; then
+                export DEFCONFIG="$cfg"
+                break
+            fi
+        done
+    fi
+
+    if [[ -n "$DEFCONFIG" ]]; then
         echo "Selected defconfig: $DEFCONFIG"
 
         # Detect device variant from defconfig name
