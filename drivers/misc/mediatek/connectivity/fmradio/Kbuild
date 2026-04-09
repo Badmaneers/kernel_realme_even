@@ -78,16 +78,20 @@ else
     ifneq ($(CFG_FM_CHIP_ID),)
 	# LD 1.0
 	# CFG_FM_CHIP_ID is platform chip id
-        ifeq ($(CONFIG_MTK_FM_CHIP),)
-            ifneq ($(filter clean mrproper distclean, $(MAKECMDGOALS)),)
-                CONFIG_MTK_FM_CHIP="DUMMY"
-            else
-                $(error CONFIG_MTK_FM_CHIP not defined)
-            endif
-        endif
-
         ccflags-y += -D CFG_FM_CHIP_ID=0x$(CFG_FM_CHIP_ID)
-        FM_CHIP := $(subst _FM,,$(subst MT,mt,$(subst ",,$(CONFIG_MTK_FM_CHIP))))
+        ifneq ($(CFG_FM_CHIP),)
+            FM_CHIP := $(CFG_FM_CHIP)
+        else
+            ifeq ($(CONFIG_MTK_FM_CHIP),)
+                ifneq ($(filter clean mrproper distclean _clean_%,$(MAKECMDGOALS)),)
+                    CONFIG_MTK_FM_CHIP="MT6631_FM"
+                else
+                    $(error CONFIG_MTK_FM_CHIP not defined)
+                endif
+            endif
+
+            FM_CHIP := $(subst _FM,,$(subst MT,mt,$(subst ",,$(CONFIG_MTK_FM_CHIP))))
+        endif
     else
 	# LD 2.0
 	# Cannot get platform chip id in LD 2.0
