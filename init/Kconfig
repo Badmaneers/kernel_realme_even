@@ -2075,6 +2075,7 @@ config MODVERSIONS
 config MODULE_REL_CRCS
 	bool
 	depends on MODVERSIONS
+	default y if ARM64
 
 config MODULE_SRCVERSION_ALL
 	bool "Source checksum for all modules"
