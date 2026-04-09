@@ -164,9 +164,10 @@ check_incremental() {
 
     if [ -f "out/.config" ]; then
         echo "Previous build detected."
-        read -p "Use incremental build? (y/n): " ans
+        read -p "Use incremental build? (Y/n): " ans
+        ans=${ans:-y}
 
-        if [[ "$ans" != "y" ]]; then
+        if [[ "${ans,,}" != "y" ]]; then
             echo "Cleaning build output..."
             make clean
             make mrproper
