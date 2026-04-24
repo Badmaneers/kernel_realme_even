@@ -927,6 +927,7 @@ static int oplus_chg_comm_parse_dt(struct oplus_chg_comm *comm_dev)
 	struct device_node *node = comm_dev->dev->of_node;
 	struct oplus_chg_comm_config *comm_cfg = &comm_dev->comm_cfg;
 	int i, m;
+	u32 tmp_u32;
 #ifdef CONFIG_OPLUS_CHG_OOS
 	struct device_node *node_temp;
 	struct drm_panel *panel;
@@ -935,41 +936,56 @@ static int oplus_chg_comm_parse_dt(struct oplus_chg_comm *comm_dev)
 	int rc;
 
 	comm_cfg->check_batt_full_by_sw = (uint8_t)of_property_read_bool(node, "oplus,check-batt-full-by-sw");
-	rc = of_property_read_u32(node, "oplus,fv-offset-voltage-mv", &comm_cfg->fv_offset_voltage_mv);
+	rc = of_property_read_u32(node, "oplus,fv-offset-voltage-mv", &tmp_u32);
 	if (rc < 0) {
 		pr_err("get oplus,fv-offset-voltage-mv property error, rc=%d\n", rc);
 		comm_cfg->fv_offset_voltage_mv = default_chg.fv_offset_voltage_mv;
+	} else {
+		comm_cfg->fv_offset_voltage_mv = tmp_u32;
 	}
-	of_property_read_u32(node, "oplus,little-cold-iterm-ma", &comm_cfg->little_cold_iterm_ma);
-	rc = of_property_read_u32(node, "oplus,sw-iterm-ma", &comm_cfg->sw_iterm_ma);
+	if (of_property_read_u32(node, "oplus,little-cold-iterm-ma", &tmp_u32) == 0)
+		comm_cfg->little_cold_iterm_ma = tmp_u32;
+	rc = of_property_read_u32(node, "oplus,sw-iterm-ma", &tmp_u32);
 	if (rc < 0) {
 		pr_err("get oplus,sw-iterm-ma property error, rc=%d\n", rc);
 		comm_cfg->sw_iterm_ma = default_chg.sw_iterm_ma;
+	} else {
+		comm_cfg->sw_iterm_ma = tmp_u32;
 	}
-	rc = of_property_read_u32(node, "oplus,full-count-sw-num", &comm_cfg->full_count_sw_num);
+	rc = of_property_read_u32(node, "oplus,full-count-sw-num", &tmp_u32);
 	if (rc < 0) {
 		pr_err("get oplus,full-count-sw-num property error, rc=%d\n", rc);
 		comm_cfg->full_count_sw_num = default_chg.full_count_sw_num;
+	} else {
+		comm_cfg->full_count_sw_num = tmp_u32;
 	}
-	rc = of_property_read_u32(node, "oplus,batt-uv-mv", &comm_cfg->batt_uv_mv);
+	rc = of_property_read_u32(node, "oplus,batt-uv-mv", &tmp_u32);
 	if (rc < 0) {
 		pr_err("get oplus,batt-uv-mv property error, rc=%d\n", rc);
 		comm_cfg->batt_uv_mv = default_chg.batt_uv_mv;
+	} else {
+		comm_cfg->batt_uv_mv = tmp_u32;
 	}
-	rc = of_property_read_u32(node, "oplus,batt-ov-mv", &comm_cfg->batt_ov_mv);
+	rc = of_property_read_u32(node, "oplus,batt-ov-mv", &tmp_u32);
 	if (rc < 0) {
 		pr_err("get oplus,batt-ov-mv property error, rc=%d\n", rc);
 		comm_cfg->batt_ov_mv = default_chg.batt_ov_mv;
+	} else {
+		comm_cfg->batt_ov_mv = tmp_u32;
 	}
-	rc = of_property_read_u32(node, "oplus,batt-oc-ma", &comm_cfg->batt_oc_ma);
+	rc = of_property_read_u32(node, "oplus,batt-oc-ma", &tmp_u32);
 	if (rc < 0) {
 		pr_err("get oplus,batt-oc-ma property error, rc=%d\n", rc);
 		comm_cfg->batt_oc_ma = default_chg.batt_oc_ma;
+	} else {
+		comm_cfg->batt_oc_ma = tmp_u32;
 	}
-	rc = of_property_read_u32(node, "oplus,batt-ovd-mv", &comm_cfg->batt_ovd_mv);
+	rc = of_property_read_u32(node, "oplus,batt-ovd-mv", &tmp_u32);
 	if (rc < 0) {
 		pr_err("get oplus,batt-ovd-mv property error, rc=%d\n", rc);
 		comm_cfg->batt_ovd_mv = default_chg.batt_ovd_mv;
+	} else {
+		comm_cfg->batt_ovd_mv = tmp_u32;
 	}
 
 	rc = read_signed_data_from_node(node, "oplus,batt-them-thr", (s32 *)comm_cfg->batt_temp_thr,
@@ -998,10 +1014,12 @@ static int oplus_chg_comm_parse_dt(struct oplus_chg_comm *comm_dev)
 			comm_cfg->ffc_temp_thr[i] = default_chg.ffc_temp_thr[i];
 	}
 
-	rc = of_property_read_u32(node, "oplus,usb-ffc-step-max", &comm_cfg->usb_ffc_step_max);
+	rc = of_property_read_u32(node, "oplus,usb-ffc-step-max", &tmp_u32);
 	if (rc < 0) {
 		pr_err("get oplus,usb-ffc-step-max property error, rc=%d\n", rc);
 		comm_cfg->usb_ffc_step_max = default_chg.usb_ffc_step_max;
+	} else {
+		comm_cfg->usb_ffc_step_max = tmp_u32;
 	}
 	rc = read_unsigned_data_from_node(node, "oplus,usb-ffc-fv-mv", (u32 *)comm_cfg->usb_ffc_fv_mv,
 					  comm_cfg->usb_ffc_step_max);
@@ -1036,10 +1054,12 @@ static int oplus_chg_comm_parse_dt(struct oplus_chg_comm *comm_dev)
 		}
 	}
 
-	rc = of_property_read_u32(node, "oplus,wls-ffc-step-max", &comm_cfg->wls_ffc_step_max);
+	rc = of_property_read_u32(node, "oplus,wls-ffc-step-max", &tmp_u32);
 	if (rc < 0) {
 		pr_err("get oplus,wls-ffc-step-max property error, rc=%d\n", rc);
 		comm_cfg->wls_ffc_step_max = default_chg.wls_ffc_step_max;
+	} else {
+		comm_cfg->wls_ffc_step_max = tmp_u32;
 	}
 	rc = read_unsigned_data_from_node(node, "oplus,wls-ffc-fv-mv", (u32 *)comm_cfg->wls_ffc_fv_mv,
 					  comm_cfg->wls_ffc_step_max);
@@ -1089,10 +1109,12 @@ static int oplus_chg_comm_parse_dt(struct oplus_chg_comm *comm_dev)
 		for (i = 0; i < BATT_TEMP_INVALID; i++)
 			comm_cfg->wls_vbatdet_mv[i] = default_chg.wls_vbatdet_mv[i];
 	}
-	rc = of_property_read_u32(node, "oplus,batt-curr-limit-thr-mv", &comm_cfg->batt_curr_limit_thr_mv);
+	rc = of_property_read_u32(node, "oplus,batt-curr-limit-thr-mv", &tmp_u32);
 	if (rc < 0) {
 		pr_err("get oplus,batt-curr-limit-thr-mv property error, rc=%d\n", rc);
 		comm_cfg->batt_curr_limit_thr_mv = default_chg.batt_curr_limit_thr_mv;
+	} else {
+		comm_cfg->batt_curr_limit_thr_mv = tmp_u32;
 	}
 
 #ifdef CONFIG_OPLUS_CHG_OOS

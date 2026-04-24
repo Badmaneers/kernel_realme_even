@@ -3086,6 +3086,8 @@ static int oplus_chg_adsp_track_thread(void *data)
 	int index;
 	int count;
 	int rc;
+	unsigned int tmp_type_reason;
+	unsigned int tmp_flag_reason;
 	adsp_track_trigger *adsp_data;
 	oplus_chg_track_trigger *ap_data;
 	struct oplus_chg_track *chip = (struct oplus_chg_track *)data;
@@ -3120,19 +3122,19 @@ static int oplus_chg_adsp_track_thread(void *data)
 			return rc;
 		}
 
-		if (oplus_chg_track_adsp_to_ap_type_mapping(adsp_data->adsp_type_reason, &(ap_data->type_reason)) >=
-			    0 &&
-		    oplus_chg_track_adsp_to_ap_flag_mapping(adsp_data->adsp_flag_reason, &(ap_data->flag_reason)) >=
-			    0) {
-			index = 0;
-			memset(ap_data->crux_info, 0, sizeof(ap_data->crux_info));
-			index += snprintf(&(ap_data->crux_info[index]), OPLUS_CHG_TRACK_CURX_INFO_LEN - index, "%s",
-					  adsp_data->adsp_crux_info);
-			oplus_chg_track_obtain_power_info(chip->chg_power_info, sizeof(chip->chg_power_info));
-			index += snprintf(&(ap_data->crux_info[index]), OPLUS_CHG_TRACK_CURX_INFO_LEN - index, "%s",
-					  chip->chg_power_info);
-			oplus_chg_track_upload_trigger_data(*ap_data);
-		}
+		       if (oplus_chg_track_adsp_to_ap_type_mapping(adsp_data->adsp_type_reason, &tmp_type_reason) >= 0 &&
+			   oplus_chg_track_adsp_to_ap_flag_mapping(adsp_data->adsp_flag_reason, &tmp_flag_reason) >= 0) {
+			       ap_data->type_reason = tmp_type_reason;
+			       ap_data->flag_reason = tmp_flag_reason;
+			       index = 0;
+			       memset(ap_data->crux_info, 0, sizeof(ap_data->crux_info));
+			       index += snprintf(&(ap_data->crux_info[index]), OPLUS_CHG_TRACK_CURX_INFO_LEN - index, "%s",
+					     adsp_data->adsp_crux_info);
+			       oplus_chg_track_obtain_power_info(chip->chg_power_info, sizeof(chip->chg_power_info));
+			       index += snprintf(&(ap_data->crux_info[index]), OPLUS_CHG_TRACK_CURX_INFO_LEN - index, "%s",
+					     chip->chg_power_info);
+			       oplus_chg_track_upload_trigger_data(*ap_data);
+		       }
 		pr_info("crux_info:%s\n", adsp_data->adsp_crux_info);
 	}
 
